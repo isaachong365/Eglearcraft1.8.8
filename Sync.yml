@@ -1,43 +1,194 @@
-name: Sync with Upstream
+import javax.swing.*;
+import java.awt.*;
+import java.awt.event.*;
+import java.util.HashMap;
 
-on:
-  schedule:
-    - cron: '0 0 * * *'
-  workflow_dispatch:
+public class MiniCraft extends JPanel implements ActionListener, KeyListener, MouseListener {
+    // Game Window Settings
+    private static final int WIDTH = 800;
+    private static final int HEIGHT = 600;
+    private static final int GRID_SIZE = 40; // Size of each block
 
-jobs:
-  sync:
-    runs-on: ubuntu-latest
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+    // Player Variables
+    private int playerX = 400;
+    private int playerY = 200;
+    private int playerWidth = 24;
+    private int playerHeight = 36;
+    private double velY = 0;
+    private boolean isGrounded = false;
 
-    - name: setup
-      run: |
-        git config user.name "GitHub Actions"
-        git config user.email "actions@github.com"
+    // Movement States
+    private boolean moveLeft = false;
+    private boolean moveRight = false;
 
-    - name: merge upstream
-      run: |
-        git remote add upstream https://git.eaglercraft.rip/eaglercraft/eaglercraft-1.8.git
-        git fetch upstream
-        git checkout main
-        git merge upstream/main --strategy-option=theirs --allow-unrelated-histories
+    // World Data (Stores block coordinates and types)
+    private HashMap<String, String> world = new HashMap<>();
+    private String selectedBlock = "DIRT";
 
-    - name: add workflow
-      run: |
-        git reset HEAD .github/workflows/
-        git checkout HEAD -- .github/workflows/
-        if git diff --quiet; then
-          echo "No changes in .github/workflows/ to commit."
-        else
-          git commit -m "Hold Workflows"
-        fi
+    // Game Core
+    private Timer timer;
 
-    - name: push changes
-      uses: ad-m/github-push-action@master
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        branch: main
+    public MiniCraft() {
+        setPreferredSize(new Dimension(WIDTH, HEIGHT));
+        setBackground(new java.awt.Color(135, 206, 235)); // Sky Blue
+        setFocusable(true);
+        addKeyListener(this);
+        addMouseListener(this);
+
+        generateWorld();
+
+        // Game Loop running at ~60 FPS
+        timer = new Timer(16, this);
+        timer.start();
+    }
+
+    // Pre-populate world with ground layers
+    private void generateWorld() {
+        int groundLevel = 10; // Grid row where grass starts
+        int totalRows = HEIGHT / GRID_SIZE;
+        int totalCols = WIDTH / GRID_SIZE;
+
+        for (int x = 0; x < totalCols; x++) {
+            for (int y = groundLevel; y < totalRows; y++) {
+                String key = x + "," + y;
+                if (y == groundLevel) {
+                    world.put(key, "GRASS");
+                } else if (y < groundLevel + 3) {
+                    world.put(key, "DIRT");
+                } else {
+                    world.put(key, "STONE");
+                }
+            }
+        }
+    }
+
+    @Override
+    protected void paintComponent(Graphics g) {
+        super.paintComponent(g);
+
+        // 1. Draw Blocks
+        for (String key : world.keySet()) {
+            String[] coords = key.split(",");
+            int bx = Integer.parseInt(coords[0]) * GRID_SIZE;
+            int by = Integer.parseInt(coords[1]) * GRID_SIZE;
+            String type = world.get(key);
+
+            switch (type) {
+                case "GRASS" -> g.setColor(new java.awt.Color(34, 139, 34));
+                case "DIRT" -> g.setColor(new java.awt.Color(139, 69, 19));
+                case "STONE" -> g.setColor(java.awt.Color.GRAY);
+                case "WOOD" -> g.setColor(new java.awt.Color(101, 67, 33));
+            }
+            g.fillRect(bx, by, GRID_SIZE, GRID_SIZE);
+            g.setColor(java.awt.Color.BLACK);
+            g.drawRect(bx, by, GRID_SIZE, GRID_SIZE); // Block outline
+        }
+
+        // 2. Draw Player
+        g.setColor(java.awt.Color.RED);
+        g.fillRect(playerX, playerY, playerWidth, playerHeight);
+
+        // 3. Draw UI Text
+        g.setColor(java.awt.Color.BLACK);
+        g.setFont(new Font("Arial", Font.BOLD, 14));
+        g.drawString("Selected Block: " + selectedBlock + " (Press 1-4 to change)", 15, 25);
+        g.drawString("Controls: A/D = Move, Space = Jump, Left Click = Destroy, Right Click = Place", 15, 45);
+    }
+
+    @Override
+    public void actionPerformed(ActionEvent e) {
+        // Horizontal movement
+        if (moveLeft) playerX -= 4;
+        if (moveRight) playerX += 4;
+
+        // Apply Gravity
+        velY += 0.4;
+        playerY += velY;
+
+        // Collision Check with Ground Blocks
+        isGrounded = false;
+        int pLeft = playerX;
+        int pRight = playerX + playerWidth;
+        int pBottom = playerY + playerHeight;
+
+        int gridX1 = pLeft / GRID_SIZE;
+        int gridX2 = pRight / GRID_SIZE;
+        int gridY = pBottom / GRID_SIZE;
+
+        // Check blocks directly underneath player feet
+        String key1 = gridX1 + "," + gridY;
+        String key2 = gridX2 + "," + gridY;
+
+        if (world.containsKey(key1) || world.containsKey(key2)) {
+            playerY = gridY * GRID_SIZE - playerHeight;
+            velY = 0;
+            isGrounded = true;
+        }
+
+        // Screen boundary locks
+        if (playerX < 0) playerX = 0;
+        if (playerX > WIDTH - playerWidth) playerX = WIDTH - playerWidth;
+
+        repaint();
+    }
+
+    @Override
+    public void keyPressed(KeyEvent e) {
+        int code = e.getKeyCode();
+        if (code == KeyEvent.VK_A) moveLeft = true;
+        if (code == KeyEvent.VK_D) moveRight = true;
+        if (code == KeyEvent.VK_SPACE && isGrounded) {
+            velY = -8.5; // Jump strength
+            isGrounded = false;
+        }
+        
+        // Block Selection Tools
+        if (code == KeyEvent.VK_1) selectedBlock = "GRASS";
+        if (code == KeyEvent.VK_2) selectedBlock = "DIRT";
+        if (code == KeyEvent.VK_3) selectedBlock = "STONE";
+        if (code == KeyEvent.VK_4) selectedBlock = "WOOD";
+    }
+
+    @Override
+    public void keyReleased(KeyEvent e) {
+        int code = e.getKeyCode();
+        if (code == KeyEvent.VK_A) moveLeft = false;
+        if (code == KeyEvent.VK_D) moveRight = false;
+    }
+
+    @Override
+    public void mousePressed(MouseEvent e) {
+        int gridX = e.getX() / GRID_SIZE;
+        int gridY = e.getY() / GRID_SIZE;
+        String key = gridX + "," + gridY;
+
+        if (SwingUtilities.isLeftMouseButton(e)) {
+            // Destroy block
+            world.remove(key);
+        } else if (SwingUtilities.isRightMouseButton(e)) {
+            // Place block if empty
+            if (!world.containsKey(key)) {
+                world.put(key, selectedBlock);
+            }
+        }
+    }
+
+    // Unused interface requirements
+    public void keyTyped(KeyEvent e) {}
+    public void mouseClicked(MouseEvent e) {}
+    public void mouseReleased(MouseEvent e) {}
+    public void mouseEntered(MouseEvent e) {}
+    public void mouseExited(MouseEvent e) {}
+
+    // Main entry point to run code
+    public static void main(String[] args) {
+        JFrame frame = new JFrame("MiniCraft 2D Java");
+        MiniCraft game = new MiniCraft();
+        frame.add(game);
+        frame.pack();
+        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        frame.setLocationRelativeTo(null);
+        frame.setResizable(false);
+        frame.setVisible(true);
+    }
+}
