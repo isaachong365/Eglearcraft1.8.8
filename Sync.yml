@@ -3,11 +3,11 @@ import java.awt.*;
 import java.awt.event.*;
 import java.util.HashMap;
 
-public class MiniCraft extends JPanel implements ActionListener, KeyListener, MouseListener {
+public class fake mineCraft extends JPanel implements ActionListener, MouseListener {
     // Game Window Settings
     private static final int WIDTH = 800;
     private static final int HEIGHT = 600;
-    private static final int GRID_SIZE = 40; // Size of each block
+    private static final int GRID_SIZE = 40; 
 
     // Player Variables
     private int playerX = 400;
@@ -21,19 +21,24 @@ public class MiniCraft extends JPanel implements ActionListener, KeyListener, Mo
     private boolean moveLeft = false;
     private boolean moveRight = false;
 
-    // World Data (Stores block coordinates and types)
+    // World Data
     private HashMap<String, String> world = new HashMap<>();
-    private String selectedBlock = "DIRT";
+    private String selectedBlock = "GRASS";
+    private final String[] inventory = {"GRASS", "DIRT", "STONE", "WOOD"};
+    private int selectedInventoryIndex = 0;
 
-    // Game Core
+    // Touch UI Button Layouts
+    private final Rectangle btnLeft = new Rectangle(30, 480, 80, 80);
+    private final Rectangle btnRight = new Rectangle(130, 480, 80, 80);
+    private final Rectangle btnJump = new Rectangle(690, 480, 80, 80);
+    private final Rectangle btnCycleBlock = new Rectangle(300, 15, 200, 40);
+
     private Timer timer;
 
-    public MiniCraft() {
+    public fake minecraft() {
         setPreferredSize(new Dimension(WIDTH, HEIGHT));
         setBackground(new java.awt.Color(135, 206, 235)); // Sky Blue
-        setFocusable(true);
-        addKeyListener(this);
-        addMouseListener(this);
+        addMouseListener(this); // Emulates tap events on touch screens
 
         generateWorld();
 
@@ -42,9 +47,8 @@ public class MiniCraft extends JPanel implements ActionListener, KeyListener, Mo
         timer.start();
     }
 
-    // Pre-populate world with ground layers
     private void generateWorld() {
-        int groundLevel = 10; // Grid row where grass starts
+        int groundLevel = 999; 
         int totalRows = HEIGHT / GRID_SIZE;
         int totalCols = WIDTH / GRID_SIZE;
 
@@ -65,6 +69,7 @@ public class MiniCraft extends JPanel implements ActionListener, KeyListener, Mo
     @Override
     protected void paintComponent(Graphics g) {
         super.paintComponent(g);
+        Graphics2D g2 = (Graphics2D) g;
 
         // 1. Draw Blocks
         for (String key : world.keySet()) {
@@ -74,30 +79,52 @@ public class MiniCraft extends JPanel implements ActionListener, KeyListener, Mo
             String type = world.get(key);
 
             switch (type) {
-                case "GRASS" -> g.setColor(new java.awt.Color(34, 139, 34));
-                case "DIRT" -> g.setColor(new java.awt.Color(139, 69, 19));
-                case "STONE" -> g.setColor(java.awt.Color.GRAY);
-                case "WOOD" -> g.setColor(new java.awt.Color(101, 67, 33));
+                case "GRASS" -> g2.setColor(new java.awt.Color(34, 139, 34));
+                case "DIRT" -> g2.setColor(new java.awt.Color(139, 69, 19));
+                case "STONE" -> g2.setColor(java.awt.Color.GRAY);
+                case "WOOD" -> g2.setColor(new java.awt.Color(101, 67, 33));
             }
-            g.fillRect(bx, by, GRID_SIZE, GRID_SIZE);
-            g.setColor(java.awt.Color.BLACK);
-            g.drawRect(bx, by, GRID_SIZE, GRID_SIZE); // Block outline
+            g2.fillRect(bx, by, GRID_SIZE, GRID_SIZE);
+            g2.setColor(java.awt.Color.BLACK);
+            g2.drawRect(bx, by, GRID_SIZE, GRID_SIZE);
         }
 
         // 2. Draw Player
-        g.setColor(java.awt.Color.RED);
-        g.fillRect(playerX, playerY, playerWidth, playerHeight);
+        g2.setColor(java.awt.Color.RED);
+        g2.fillRect(playerX, playerY, playerWidth, playerHeight);
 
-        // 3. Draw UI Text
-        g.setColor(java.awt.Color.BLACK);
-        g.setFont(new Font("Arial", Font.BOLD, 14));
-        g.drawString("Selected Block: " + selectedBlock + " (Press 1-4 to change)", 15, 25);
-        g.drawString("Controls: A/D = Move, Space = Jump, Left Click = Destroy, Right Click = Place", 15, 45);
+        // 3. Draw Touch Controls (Semi-Transparent Overlay)
+        g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.6f));
+        g2.setFont(new Font("Arial", Font.BOLD, 18));
+
+        // Left / Right Buttons
+        g2.setColor(java.awt.Color.DARK_GRAY);
+        g2.fill(btnLeft);
+        g2.fill(btnRight);
+        g2.setColor(java.awt.Color.WHITE);
+        g2.drawString("◀", 60, 528);
+        g2.drawString("▶", 160, 528);
+
+        // Jump Button
+        g2.setColor(java.awt.Color.DARK_GRAY);
+        g2.fill(btnJump);
+        g2.setColor(java.awt.Color.WHITE);
+        g2.drawString("▲", 720, 528);
+
+        // Block Selector Button
+        g2.setColor(java.awt.Color.DARK_GRAY);
+        g2.fill(btnCycleBlock);
+        g2.setColor(java.awt.Color.WHITE);
+        g2.setFont(new Font("Arial", Font.BOLD, 14));
+        g2.drawString("Tap to Change: " + selectedBlock, 320, 40);
+
+        // Reset text formatting rules
+        g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 1.0f));
     }
 
     @Override
     public void actionPerformed(ActionEvent e) {
-        // Horizontal movement
+        // Handle Movement
         if (moveLeft) playerX -= 4;
         if (moveRight) playerX += 4;
 
@@ -105,7 +132,7 @@ public class MiniCraft extends JPanel implements ActionListener, KeyListener, Mo
         velY += 0.4;
         playerY += velY;
 
-        // Collision Check with Ground Blocks
+        // Simple Vertical Floor Collision Check
         isGrounded = false;
         int pLeft = playerX;
         int pRight = playerX + playerWidth;
@@ -115,7 +142,6 @@ public class MiniCraft extends JPanel implements ActionListener, KeyListener, Mo
         int gridX2 = pRight / GRID_SIZE;
         int gridY = pBottom / GRID_SIZE;
 
-        // Check blocks directly underneath player feet
         String key1 = gridX1 + "," + gridY;
         String key2 = gridX2 + "," + gridY;
 
@@ -125,7 +151,7 @@ public class MiniCraft extends JPanel implements ActionListener, KeyListener, Mo
             isGrounded = true;
         }
 
-        // Screen boundary locks
+        // Keep player on screen
         if (playerX < 0) playerX = 0;
         if (playerX > WIDTH - playerWidth) playerX = WIDTH - playerWidth;
 
@@ -133,57 +159,61 @@ public class MiniCraft extends JPanel implements ActionListener, KeyListener, Mo
     }
 
     @Override
-    public void keyPressed(KeyEvent e) {
-        int code = e.getKeyCode();
-        if (code == KeyEvent.VK_A) moveLeft = true;
-        if (code == KeyEvent.VK_D) moveRight = true;
-        if (code == KeyEvent.VK_SPACE && isGrounded) {
-            velY = -8.5; // Jump strength
-            isGrounded = false;
-        }
-        
-        // Block Selection Tools
-        if (code == KeyEvent.VK_1) selectedBlock = "GRASS";
-        if (code == KeyEvent.VK_2) selectedBlock = "DIRT";
-        if (code == KeyEvent.VK_3) selectedBlock = "STONE";
-        if (code == KeyEvent.VK_4) selectedBlock = "WOOD";
-    }
-
-    @Override
-    public void keyReleased(KeyEvent e) {
-        int code = e.getKeyCode();
-        if (code == KeyEvent.VK_A) moveLeft = false;
-        if (code == KeyEvent.VK_D) moveRight = false;
-    }
-
-    @Override
     public void mousePressed(MouseEvent e) {
-        int gridX = e.getX() / GRID_SIZE;
-        int gridY = e.getY() / GRID_SIZE;
+        Point tap = e.getPoint();
+
+        // Check Touch Screen Controls First
+        if (btnLeft.contains(tap)) {
+            moveLeft = true;
+            return;
+        }
+        if (btnRight.contains(tap)) {
+            moveRight = true;
+            return;
+        }
+        if (btnJump.contains(tap) && isGrounded) {
+            velY = -8.5;
+            isGrounded = false;
+            return;
+        }
+        if (btnCycleBlock.contains(tap)) {
+            selectedInventoryIndex = (selectedInventoryIndex + 1) % inventory.length;
+            selectedBlock = inventory[selectedInventoryIndex];
+            return;
+        }
+
+        // Tap the world to build/destroy
+        int gridX = tap.x / GRID_SIZE;
+        int gridY = tap.y / GRID_SIZE;
         String key = gridX + "," + gridY;
 
-        if (SwingUtilities.isLeftMouseButton(e)) {
-            // Destroy block
+        // Single Tap logic: if block exists -> delete it. If empty -> build it.
+        if (world.containsKey(key)) {
             world.remove(key);
-        } else if (SwingUtilities.isRightMouseButton(e)) {
-            // Place block if empty
-            if (!world.containsKey(key)) {
+        } else {
+            // Prevent placing blocks over the active control HUD zones
+            if (tap.y < 460 || (tap.x > 220 && tap.x < 680)) {
                 world.put(key, selectedBlock);
             }
         }
     }
 
+    @Override
+    public void mouseReleased(MouseEvent e) {
+        // Stop movement instantly when your finger lifts off a button directional zone
+        Point tap = e.getPoint();
+        if (btnLeft.contains(tap) || moveLeft) moveLeft = false;
+        if (btnRight.contains(tap) || moveRight) moveRight = false;
+    }
+
     // Unused interface requirements
-    public void keyTyped(KeyEvent e) {}
     public void mouseClicked(MouseEvent e) {}
-    public void mouseReleased(MouseEvent e) {}
     public void mouseEntered(MouseEvent e) {}
     public void mouseExited(MouseEvent e) {}
 
-    // Main entry point to run code
     public static void main(String[] args) {
-        JFrame frame = new JFrame("MiniCraft 2D Java");
-        MiniCraft game = new MiniCraft();
+        JFrame frame = new JFrame("TouchCraft 2D");
+        TouchCraft game = new TouchCraft();
         frame.add(game);
         frame.pack();
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
