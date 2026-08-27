@@ -32,7 +32,7 @@ import java.util.*;
  * ============================================================
  */
 
-public class fake MineCraft extends JPanel
+public class fakeMineCraft extends JPanel
         implements ActionListener,
                    KeyListener,
                    MouseListener,
