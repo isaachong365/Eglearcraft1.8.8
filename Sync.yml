@@ -49,10 +49,10 @@ public class fake MineCraft extends JPanel
     // WORLD
     // ========================================================
 
-    private static final int WORLD_SIZE = 6400;
-    private static final int WORLD_HEIGHT = 12740;
+    private static final int WORLD_SIZE = 228;
+    private static final int WORLD_HEIGHT = 164;
 
-    private static final int SEA_LEVEL = 15;
+    private static final int SEA_LEVEL = 82;
 
     private BlockType[][][] world =
             new BlockType[WORLD_SIZE][WORLD_HEIGHT][WORLD_SIZE];
