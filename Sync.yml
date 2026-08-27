@@ -1,769 +1,993 @@
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
-import java.awt.image.BufferedImage;
-import java.io.*;
 import java.util.*;
-import java.util.List;
 
 /*
  * ============================================================
- *                         MINICRAFT
+ *                    MINICRAFT 3D
  * ============================================================
  *
- * A single-file 2D Minecraft-style sandbox game.
+ * A single-file 3D voxel-style Minecraft-inspired game.
  *
- * CONTROLS
- * ------------------------------------------------------------
- * A / D        Move
- * SHIFT        Sprint
- * SPACE        Jump
- * LEFT CLICK   Mine / attack
- * RIGHT CLICK  Place block
- * 1 - 9        Select hotbar slot
- * E            Inventory / crafting
- * F            Eat food
- * Q            Drop item
- * ESC          Pause
- * F5           Save
- * F9           Load
- * M            Toggle minimap
- * N            Toggle day/night speed
- * T            Toggle rain
+ * Controls:
+ *
+ * LAPTOP:
+ *   W / A / S / D  = Move
+ *   Arrow Keys     = Look
+ *   Space          = Jump
+ *   Shift          = Sprint
+ *   E              = Change block
+ *   F              = Break block
+ *   R              = Place block
+ *   Q              = Attack
+ *
+ * MOUSE:
+ *   Left click     = Break / attack
+ *   Right click    = Place
+ *
+ * TOUCH:
+ *   On-screen buttons for movement, jump, break, place
  *
  * ============================================================
  */
 
-public class MiniCraft extends JPanel
-        implements ActionListener, KeyListener, MouseListener, MouseMotionListener {
+public class MiniCraft3D extends JPanel
+        implements ActionListener,
+                   KeyListener,
+                   MouseListener,
+                   MouseMotionListener {
 
-    // ============================================================
-    // GAME SETTINGS
-    // ============================================================
+    // ========================================================
+    // WINDOW
+    // ========================================================
 
-    static final int SCREEN_WIDTH = 1000;
-    static final int SCREEN_HEIGHT = 700;
+    private static final int START_WIDTH = 1000;
+    private static final int START_HEIGHT = 700;
 
-    static final int BLOCK_SIZE = 32;
+    // ========================================================
+    // WORLD
+    // ========================================================
 
-    static final int WORLD_WIDTH = 300;
-    static final int WORLD_HEIGHT = 100;
+    private static final int WORLD_SIZE = 64;
+    private static final int WORLD_HEIGHT = 18;
 
-    static final int HOTBAR_SIZE = 9;
+    private static final int SEA_LEVEL = 5;
 
-    static final double GRAVITY = 0.45;
-    static final double JUMP_POWER = -10.5;
+    private BlockType[][][] world =
+            new BlockType[WORLD_SIZE][WORLD_HEIGHT][WORLD_SIZE];
 
-    // ============================================================
-    // GAME OBJECTS
-    // ============================================================
+    private Random random = new Random();
 
-    private final World world = new World();
+    // ========================================================
+    // PLAYER
+    // ========================================================
 
-    private final Player player = new Player();
+    private double playerX = WORLD_SIZE / 2.0;
+    private double playerY = 8.0;
+    private double playerZ = WORLD_SIZE / 2.0;
 
-    private final ArrayList<Enemy> enemies = new ArrayList<>();
-    private final ArrayList<ItemDrop> drops = new ArrayList<>();
-    private final ArrayList<Particle> particles = new ArrayList<>();
-    private final ArrayList<Projectile> projectiles = new ArrayList<>();
+    private double velocityY = 0;
 
-    private final Random random = new Random();
+    private double playerHeight = 1.8;
+    private double playerRadius = 0.3;
 
-    // ============================================================
+    private boolean grounded = false;
+
+    private int health = 100;
+    private int maxHealth = 100;
+
+    private int xp = 0;
+    private int level = 1;
+
+    // ========================================================
     // CAMERA
-    // ============================================================
+    // ========================================================
 
-    private double cameraX = 0;
-    private double cameraY = 0;
+    private double cameraYaw = 0;
+    private double cameraPitch = -0.25;
 
-    // ============================================================
+    private double mouseSensitivity = 0.006;
+
+    // ========================================================
+    // MOVEMENT
+    // ========================================================
+
+    private boolean forward;
+    private boolean backward;
+    private boolean left;
+    private boolean right;
+
+    private boolean sprint;
+
+    // ========================================================
+    // TOUCH
+    // ========================================================
+
+    private boolean touchForward;
+    private boolean touchBackward;
+    private boolean touchLeft;
+    private boolean touchRight;
+
+    // ========================================================
+    // BLOCK SELECTION
+    // ========================================================
+
+    private BlockType selectedBlock = BlockType.GRASS;
+
+    private BlockType[] hotbar = {
+            BlockType.GRASS,
+            BlockType.DIRT,
+            BlockType.STONE,
+            BlockType.WOOD,
+            BlockType.LEAVES,
+            BlockType.SAND,
+            BlockType.GLASS,
+            BlockType.TORCH
+    };
+
+    private int selectedSlot = 0;
+
+    // ========================================================
     // GAME STATE
-    // ============================================================
+    // ========================================================
 
     private Timer timer;
 
-    private boolean running = true;
+    private long lastTime;
+
+    private double dayTime = 0;
+
     private boolean paused = false;
+
     private boolean gameOver = false;
 
-    private boolean showInventory = false;
-    private boolean showMinimap = true;
+    private int score = 0;
 
-    private boolean rainEnabled = false;
+    // ========================================================
+    // ENEMIES
+    // ========================================================
 
-    private boolean moveLeft = false;
-    private boolean moveRight = false;
-    private boolean sprint = false;
+    private ArrayList<Enemy> enemies =
+            new ArrayList<>();
 
-    private boolean jumpPressed = false;
+    private long lastEnemySpawn = 0;
 
-    private boolean mouseLeft = false;
-    private boolean mouseRight = false;
+    // ========================================================
+    // PARTICLES
+    // ========================================================
+
+    private ArrayList<Particle> particles =
+            new ArrayList<>();
+
+    // ========================================================
+    // TOUCH BUTTONS
+    // ========================================================
+
+    private Rectangle touchUp =
+            new Rectangle();
+
+    private Rectangle touchDown =
+            new Rectangle();
+
+    private Rectangle touchLeftButton =
+            new Rectangle();
+
+    private Rectangle touchRightButton =
+            new Rectangle();
+
+    private Rectangle touchJump =
+            new Rectangle();
+
+    private Rectangle touchBreak =
+            new Rectangle();
+
+    private Rectangle touchPlace =
+            new Rectangle();
+
+    private Rectangle touchAttack =
+            new Rectangle();
+
+    // ========================================================
+    // MOUSE
+    // ========================================================
 
     private int mouseX;
     private int mouseY;
 
-    // ============================================================
-    // TIME
-    // ============================================================
+    // ========================================================
+    // BLOCK TYPES
+    // ========================================================
 
-    private double timeOfDay = 0;
+    enum BlockType {
 
-    private boolean fastTime = false;
+        AIR(
+                new Color(0, 0, 0, 0),
+                false
+        ),
 
-    // ============================================================
-    // SCORE
-    // ============================================================
+        GRASS(
+                new Color(70, 180, 70),
+                true
+        ),
 
-    private int score = 0;
-    private int level = 1;
-    private int xp = 0;
+        DIRT(
+                new Color(135, 80, 40),
+                true
+        ),
 
-    // ============================================================
-    // HOTBAR
-    // ============================================================
+        STONE(
+                new Color(110, 110, 115),
+                true
+        ),
 
-    private int selectedSlot = 0;
+        WOOD(
+                new Color(125, 80, 40),
+                true
+        ),
 
-    private final ItemStack[] hotbar = new ItemStack[HOTBAR_SIZE];
+        LEAVES(
+                new Color(40, 150, 60, 220),
+                true
+        ),
 
-    // ============================================================
+        SAND(
+                new Color(220, 200, 120),
+                true
+        ),
+
+        WATER(
+                new Color(40, 130, 220, 150),
+                false
+        ),
+
+        GLASS(
+                new Color(170, 220, 240, 100),
+                true
+        ),
+
+        COAL(
+                new Color(45, 45, 45),
+                true
+        ),
+
+        IRON(
+                new Color(190, 190, 190),
+                true
+        ),
+
+        GOLD(
+                new Color(230, 190, 40),
+                true
+        ),
+
+        TORCH(
+                new Color(255, 180, 40),
+                false
+        );
+
+        Color color;
+        boolean solid;
+
+        BlockType(Color color, boolean solid) {
+            this.color = color;
+            this.solid = solid;
+        }
+    }
+
+    // ========================================================
+    // ENEMY
+    // ========================================================
+
+    class Enemy {
+
+        double x;
+        double y;
+        double z;
+
+        double health = 50;
+
+        double speed = 0.025;
+
+        Enemy(double x, double y, double z) {
+            this.x = x;
+            this.y = y;
+            this.z = z;
+        }
+
+        void update() {
+
+            double dx = playerX - x;
+            double dz = playerZ - z;
+
+            double distance =
+                    Math.sqrt(dx * dx + dz * dz);
+
+            if (distance > 1.5) {
+
+                x += (dx / distance) * speed;
+                z += (dz / distance) * speed;
+            }
+
+            if (distance < 1.6) {
+
+                if (System.currentTimeMillis() % 1000 < 30) {
+
+                    health -= 5;
+
+                    createParticles(
+                            x,
+                            y + 0.8,
+                            z,
+                            Color.RED
+                    );
+
+                    if (health <= 0) {
+
+                        score += 100;
+
+                        xp += 25;
+
+                        createParticles(
+                                x,
+                                y + 0.8,
+                                z,
+                                Color.YELLOW
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    // ========================================================
+    // PARTICLE
+    // ========================================================
+
+    class Particle {
+
+        double x;
+        double y;
+        double z;
+
+        double vx;
+        double vy;
+        double vz;
+
+        int life = 30;
+
+        Color color;
+
+        Particle(
+                double x,
+                double y,
+                double z,
+                Color color) {
+
+            this.x = x;
+            this.y = y;
+            this.z = z;
+
+            this.color = color;
+
+            vx =
+                    (random.nextDouble() - 0.5)
+                            * 0.08;
+
+            vy =
+                    random.nextDouble()
+                            * 0.12;
+
+            vz =
+                    (random.nextDouble() - 0.5)
+                            * 0.08;
+        }
+
+        void update() {
+
+            x += vx;
+            y += vy;
+            z += vz;
+
+            vy -= 0.005;
+
+            life--;
+        }
+    }
+
+    // ========================================================
     // CONSTRUCTOR
-    // ============================================================
+    // ========================================================
 
-    public MiniCraft() {
+    public MiniCraft3D() {
 
         setPreferredSize(
-                new Dimension(SCREEN_WIDTH, SCREEN_HEIGHT)
+                new Dimension(
+                        START_WIDTH,
+                        START_HEIGHT
+                )
         );
 
         setFocusable(true);
 
         addKeyListener(this);
+
         addMouseListener(this);
+
         addMouseMotionListener(this);
 
-        initializeHotbar();
+        generateWorld();
 
-        world.generate();
+        spawnInitialEnemies();
 
-        player.spawn();
+        updateTouchButtons();
 
-        timer = new Timer(16, this);
+        lastTime =
+                System.currentTimeMillis();
+
+        timer =
+                new Timer(
+                        16,
+                        this
+                );
+
         timer.start();
-
-        requestFocusInWindow();
     }
 
-    // ============================================================
-    // HOTBAR
-    // ============================================================
+    // ========================================================
+    // WORLD GENERATION
+    // ========================================================
 
-    private void initializeHotbar() {
+    private void generateWorld() {
 
-        hotbar[0] = new ItemStack(ItemType.GRASS, 64);
-        hotbar[1] = new ItemStack(ItemType.DIRT, 64);
-        hotbar[2] = new ItemStack(ItemType.STONE, 64);
-        hotbar[3] = new ItemStack(ItemType.WOOD, 32);
-        hotbar[4] = new ItemStack(ItemType.SAND, 32);
-        hotbar[5] = new ItemStack(ItemType.TORCH, 32);
-        hotbar[6] = new ItemStack(ItemType.APPLE, 10);
-        hotbar[7] = new ItemStack(ItemType.PICKAXE, 1);
-        hotbar[8] = new ItemStack(ItemType.SWORD, 1);
-    }
+        for (int x = 0; x < WORLD_SIZE; x++) {
 
-    // ============================================================
-    // GAME LOOP
-    // ============================================================
+            for (int z = 0; z < WORLD_SIZE; z++) {
 
-    @Override
-    public void actionPerformed(ActionEvent e) {
+                double noise =
+                        Math.sin(x * 0.22)
+                        * 1.5
+                        +
+                        Math.cos(z * 0.18)
+                        * 1.5
+                        +
+                        random.nextDouble() * 1.5;
 
-        if (!running) {
-            repaint();
-            return;
+                int terrainHeight =
+                        SEA_LEVEL
+                        +
+                        (int) noise;
+
+                terrainHeight =
+                        Math.max(
+                                3,
+                                Math.min(
+                                        WORLD_HEIGHT - 4,
+                                        terrainHeight
+                                )
+                        );
+
+                for (int y = 0; y < WORLD_HEIGHT; y++) {
+
+                    if (y > terrainHeight) {
+
+                        if (y <= SEA_LEVEL) {
+
+                            world[x][y][z] =
+                                    BlockType.WATER;
+
+                        } else {
+
+                            world[x][y][z] =
+                                    BlockType.AIR;
+                        }
+
+                    } else if (y == terrainHeight) {
+
+                        if (terrainHeight <= SEA_LEVEL) {
+
+                            world[x][y][z] =
+                                    BlockType.SAND;
+
+                        } else {
+
+                            world[x][y][z] =
+                                    BlockType.GRASS;
+                        }
+
+                    } else if (y >= terrainHeight - 3) {
+
+                        world[x][y][z] =
+                                BlockType.DIRT;
+
+                    } else {
+
+                        // Ore generation
+
+                        double ore =
+                                random.nextDouble();
+
+                        if (ore < 0.015) {
+
+                            world[x][y][z] =
+                                    BlockType.GOLD;
+
+                        } else if (ore < 0.04) {
+
+                            world[x][y][z] =
+                                    BlockType.IRON;
+
+                        } else if (ore < 0.08) {
+
+                            world[x][y][z] =
+                                    BlockType.COAL;
+
+                        } else {
+
+                            world[x][y][z] =
+                                    BlockType.STONE;
+                        }
+                    }
+                }
+            }
         }
 
-        if (!paused && !gameOver) {
+        generateTrees();
+    }
 
-            updateTime();
+    // ========================================================
+    // TREES
+    // ========================================================
 
-            updatePlayer();
+    private void generateTrees() {
 
-            updateCamera();
+        for (int i = 0; i < 80; i++) {
 
-            updateEnemies();
+            int x =
+                    random.nextInt(
+                            WORLD_SIZE
+                    );
 
-            updateDrops();
+            int z =
+                    random.nextInt(
+                            WORLD_SIZE
+                    );
 
-            updateProjectiles();
+            int y =
+                    getSurfaceY(x, z);
 
-            updateParticles();
+            if (y < 4 ||
+                    y >= WORLD_HEIGHT - 6) {
 
-            spawnEnemies();
-
-            handleMining();
-
-            handlePlacing();
-
-            handleItemPickup();
-
-            if (rainEnabled) {
-                createRain();
+                continue;
             }
+
+            if (world[x][y][z] !=
+                    BlockType.GRASS) {
+
+                continue;
+            }
+
+            // Trunk
+
+            for (int h = 1; h <= 4; h++) {
+
+                if (y + h <
+                        WORLD_HEIGHT) {
+
+                    world[x][y + h][z] =
+                            BlockType.WOOD;
+                }
+            }
+
+            // Leaves
+
+            for (int dx = -2; dx <= 2; dx++) {
+
+                for (int dz = -2; dz <= 2; dz++) {
+
+                    for (int dy = 3; dy <= 5; dy++) {
+
+                        int bx =
+                                x + dx;
+
+                        int by =
+                                y + dy;
+
+                        int bz =
+                                z + dz;
+
+                        if (!insideWorld(
+                                bx,
+                                by,
+                                bz
+                        )) {
+
+                            continue;
+                        }
+
+                        if (Math.abs(dx)
+                                + Math.abs(dz)
+                                <= 3) {
+
+                            world[bx][by][bz] =
+                                    BlockType.LEAVES;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ========================================================
+    // INITIAL ENEMIES
+    // ========================================================
+
+    private void spawnInitialEnemies() {
+
+        for (int i = 0; i < 10; i++) {
+
+            spawnEnemy();
+        }
+    }
+
+    private void spawnEnemy() {
+
+        double x =
+                random.nextInt(
+                        WORLD_SIZE
+                );
+
+        double z =
+                random.nextInt(
+                        WORLD_SIZE
+                );
+
+        int y =
+                getSurfaceY(
+                        (int) x,
+                        (int) z
+                );
+
+        enemies.add(
+                new Enemy(
+                        x,
+                        y + 1,
+                        z
+                )
+        );
+    }
+
+    // ========================================================
+    // SURFACE
+    // ========================================================
+
+    private int getSurfaceY(
+            int x,
+            int z) {
+
+        x =
+                Math.max(
+                        0,
+                        Math.min(
+                                WORLD_SIZE - 1,
+                                x
+                        )
+                );
+
+        z =
+                Math.max(
+                        0,
+                        Math.min(
+                                WORLD_SIZE - 1,
+                                z
+                        )
+                );
+
+        for (
+                int y = WORLD_HEIGHT - 1;
+                y >= 0;
+                y--
+        ) {
+
+            BlockType b =
+                    world[x][y][z];
+
+            if (b != BlockType.AIR &&
+                    b != BlockType.WATER &&
+                    b != BlockType.LEAVES) {
+
+                return y;
+            }
+        }
+
+        return 0;
+    }
+
+    // ========================================================
+    // GAME LOOP
+    // ========================================================
+
+    @Override
+    public void actionPerformed(
+            ActionEvent e) {
+
+        long now =
+                System.currentTimeMillis();
+
+        double delta =
+                (now - lastTime)
+                / 16.0;
+
+        delta =
+                Math.min(
+                        delta,
+                        3
+                );
+
+        lastTime = now;
+
+        if (!paused &&
+                !gameOver) {
+
+            updateGame(delta);
         }
 
         repaint();
     }
 
-    // ============================================================
-    // TIME
-    // ============================================================
+    // ========================================================
+    // UPDATE GAME
+    // ========================================================
 
-    private void updateTime() {
+    private void updateGame(
+            double delta) {
 
-        double speed = fastTime ? 0.0025 : 0.0005;
+        updatePlayer(delta);
 
-        timeOfDay += speed;
+        updateEnemies();
 
-        if (timeOfDay >= 1) {
-            timeOfDay = 0;
-        }
+        updateParticles();
+
+        updateDayNight();
+
+        spawnEnemiesAutomatically();
+
+        checkLevel();
+
+        updateTouchButtons();
     }
 
-    private boolean isNight() {
-
-        return timeOfDay > 0.55 && timeOfDay < 0.95;
-    }
-
-    // ============================================================
+    // ========================================================
     // PLAYER
-    // ============================================================
+    // ========================================================
 
-    private void updatePlayer() {
+    private void updatePlayer(
+            double delta) {
 
-        double speed = sprint ? 5.0 : 3.2;
+        double speed =
+                sprint
+                ? 0.12
+                : 0.07;
 
-        if (moveLeft) {
-            player.vx = -speed;
-        } else if (moveRight) {
-            player.vx = speed;
-        } else {
-            player.vx *= 0.75;
+        double dx = 0;
+        double dz = 0;
+
+        boolean goForward =
+                forward || touchForward;
+
+        boolean goBackward =
+                backward || touchBackward;
+
+        boolean goLeft =
+                left || touchLeft;
+
+        boolean goRight =
+                right || touchRight;
+
+        if (goForward) {
+
+            dx +=
+                    Math.sin(cameraYaw)
+                            * speed;
+
+            dz +=
+                    Math.cos(cameraYaw)
+                            * speed;
         }
 
-        if (jumpPressed && player.grounded) {
+        if (goBackward) {
 
-            player.vy = JUMP_POWER;
+            dx -=
+                    Math.sin(cameraYaw)
+                            * speed;
 
-            player.grounded = false;
-
-            jumpPressed = false;
+            dz -=
+                    Math.cos(cameraYaw)
+                            * speed;
         }
 
-        player.vy += GRAVITY;
+        if (goLeft) {
 
-        movePlayerHorizontal();
+            dx +=
+                    Math.sin(
+                            cameraYaw
+                                    - Math.PI / 2
+                    ) * speed;
 
-        movePlayerVertical();
+            dz +=
+                    Math.cos(
+                            cameraYaw
+                                    - Math.PI / 2
+                    ) * speed;
+        }
 
-        player.health = Math.min(
-                player.maxHealth,
-                player.health
+        if (goRight) {
+
+            dx +=
+                    Math.sin(
+                            cameraYaw
+                                    + Math.PI / 2
+                    ) * speed;
+
+            dz +=
+                    Math.cos(
+                            cameraYaw
+                                    + Math.PI / 2
+                    ) * speed;
+        }
+
+        movePlayer(
+                dx * delta,
+                dz * delta
         );
 
-        if (player.y > WORLD_HEIGHT * BLOCK_SIZE + 200) {
+        // Gravity
 
-            player.respawn();
+        velocityY +=
+                0.025 * delta;
 
-        }
+        playerY +=
+                velocityY * delta;
 
-        if (player.health <= 0) {
+        if (velocityY >= 0) {
 
-            gameOver = true;
-        }
-    }
+            int bx =
+                    (int) Math.floor(
+                            playerX
+                    );
 
-    private void movePlayerHorizontal() {
+            int bz =
+                    (int) Math.floor(
+                            playerZ
+                    );
 
-        player.x += player.vx;
+            int groundY =
+                    getSurfaceY(
+                            bx,
+                            bz
+                    );
 
-        Rectangle rect = player.getBounds();
+            double floor =
+                    groundY + 1.0;
 
-        int left = rect.x / BLOCK_SIZE;
-        int right = (rect.x + rect.width) / BLOCK_SIZE;
+            if (playerY <= floor) {
 
-        int top = rect.y / BLOCK_SIZE;
-        int bottom = (rect.y + rect.height - 1) / BLOCK_SIZE;
+                playerY = floor;
 
-        if (player.vx > 0) {
+                velocityY = 0;
 
-            for (int y = top; y <= bottom; y++) {
+                grounded = true;
 
-                if (world.isSolid(right, y)) {
-
-                    player.x =
-                            right * BLOCK_SIZE
-                                    - player.width;
-
-                    player.vx = 0;
-
-                    break;
-                }
-            }
-
-        } else if (player.vx < 0) {
-
-            for (int y = top; y <= bottom; y++) {
-
-                if (world.isSolid(left, y)) {
-
-                    player.x =
-                            (left + 1) * BLOCK_SIZE;
-
-                    player.vx = 0;
-
-                    break;
-                }
-            }
-        }
-    }
-
-    private void movePlayerVertical() {
-
-        player.y += player.vy;
-
-        Rectangle rect = player.getBounds();
-
-        int left = rect.x / BLOCK_SIZE;
-        int right = (rect.x + rect.width - 1) / BLOCK_SIZE;
-
-        int top = rect.y / BLOCK_SIZE;
-        int bottom = (rect.y + rect.height) / BLOCK_SIZE;
-
-        player.grounded = false;
-
-        if (player.vy > 0) {
-
-            for (int x = left; x <= right; x++) {
-
-                if (world.isSolid(x, bottom)) {
-
-                    player.y =
-                            bottom * BLOCK_SIZE
-                                    - player.height;
-
-                    player.vy = 0;
-
-                    player.grounded = true;
-
-                    break;
-                }
-            }
-
-        } else if (player.vy < 0) {
-
-            for (int x = left; x <= right; x++) {
-
-                if (world.isSolid(x, top)) {
-
-                    player.y =
-                            (top + 1) * BLOCK_SIZE;
-
-                    player.vy = 0;
-
-                    break;
-                }
-            }
-        }
-    }
-
-    // ============================================================
-    // CAMERA
-    // ============================================================
-
-    private void updateCamera() {
-
-        cameraX =
-                player.x
-                        + player.width / 2.0
-                        - SCREEN_WIDTH / 2.0;
-
-        cameraY =
-                player.y
-                        + player.height / 2.0
-                        - SCREEN_HEIGHT / 2.0;
-
-        cameraX = Math.max(
-                0,
-                Math.min(
-                        cameraX,
-                        WORLD_WIDTH * BLOCK_SIZE
-                                - SCREEN_WIDTH
-                )
-        );
-
-        cameraY = Math.max(
-                0,
-                Math.min(
-                        cameraY,
-                        WORLD_HEIGHT * BLOCK_SIZE
-                                - SCREEN_HEIGHT
-                )
-        );
-    }
-
-    // ============================================================
-    // MINING
-    // ============================================================
-
-    private void handleMining() {
-
-        if (!mouseLeft) {
-            return;
-        }
-
-        int worldX =
-                (int) ((mouseX + cameraX) / BLOCK_SIZE);
-
-        int worldY =
-                (int) ((mouseY + cameraY) / BLOCK_SIZE);
-
-        if (!world.inBounds(worldX, worldY)) {
-            return;
-        }
-
-        double distance =
-                distance(
-                        player.x,
-                        player.y,
-                        worldX * BLOCK_SIZE,
-                        worldY * BLOCK_SIZE
-                );
-
-        if (distance > 180) {
-            return;
-        }
-
-        BlockType block =
-                world.get(worldX, worldY);
-
-        if (block == null) {
-            return;
-        }
-
-        if (block == BlockType.BEDROCK) {
-            return;
-        }
-
-        int damage = 1;
-
-        ItemType held =
-                hotbar[selectedSlot].type;
-
-        if (held == ItemType.PICKAXE
-                && isStone(block)) {
-
-            damage = 4;
-        }
-
-        if (held == ItemType.AXE
-                && (block == BlockType.WOOD
-                || block == BlockType.LEAVES)) {
-
-            damage = 4;
-        }
-
-        if (world.damageBlock(
-                worldX,
-                worldY,
-                damage)) {
-
-            addItem(
-                    itemForBlock(block),
-                    1
-            );
-
-            score += 5;
-
-            createBlockParticles(
-                    worldX * BLOCK_SIZE,
-                    worldY * BLOCK_SIZE,
-                    block
-            );
-
-            gainXP(2);
-        }
-
-        mouseLeft = false;
-    }
-
-    private boolean isStone(BlockType block) {
-
-        return block == BlockType.STONE
-                || block == BlockType.COAL_ORE
-                || block == BlockType.IRON_ORE
-                || block == BlockType.GOLD_ORE
-                || block == BlockType.DIAMOND_ORE;
-    }
-
-    private ItemType itemForBlock(BlockType block) {
-
-        switch (block) {
-
-            case GRASS:
-                return ItemType.GRASS;
-
-            case DIRT:
-                return ItemType.DIRT;
-
-            case STONE:
-                return ItemType.STONE;
-
-            case WOOD:
-                return ItemType.WOOD;
-
-            case SAND:
-                return ItemType.SAND;
-
-            case COAL_ORE:
-                return ItemType.COAL;
-
-            case IRON_ORE:
-                return ItemType.IRON;
-
-            case GOLD_ORE:
-                return ItemType.GOLD;
-
-            case DIAMOND_ORE:
-                return ItemType.DIAMOND;
-
-            case TORCH:
-                return ItemType.TORCH;
-
-            default:
-                return ItemType.DIRT;
-        }
-    }
-
-    // ============================================================
-    // PLACING
-    // ============================================================
-
-    private void handlePlacing() {
-
-        if (!mouseRight) {
-            return;
-        }
-
-        int worldX =
-                (int) ((mouseX + cameraX) / BLOCK_SIZE);
-
-        int worldY =
-                (int) ((mouseY + cameraY) / BLOCK_SIZE);
-
-        if (!world.inBounds(worldX, worldY)) {
-            return;
-        }
-
-        ItemType selected =
-                hotbar[selectedSlot].type;
-
-        BlockType block =
-                blockForItem(selected);
-
-        if (block == null) {
-            mouseRight = false;
-            return;
-        }
-
-        if (hotbar[selectedSlot].amount <= 0) {
-            mouseRight = false;
-            return;
-        }
-
-        if (world.get(worldX, worldY) != null) {
-            mouseRight = false;
-            return;
-        }
-
-        Rectangle blockRect =
-                new Rectangle(
-                        worldX * BLOCK_SIZE,
-                        worldY * BLOCK_SIZE,
-                        BLOCK_SIZE,
-                        BLOCK_SIZE
-                );
-
-        if (blockRect.intersects(player.getBounds())) {
-            mouseRight = false;
-            return;
-        }
-
-        world.set(
-                worldX,
-                worldY,
-                block
-        );
-
-        hotbar[selectedSlot].amount--;
-
-        mouseRight = false;
-    }
-
-    private BlockType blockForItem(ItemType item) {
-
-        switch (item) {
-
-            case GRASS:
-                return BlockType.GRASS;
-
-            case DIRT:
-                return BlockType.DIRT;
-
-            case STONE:
-                return BlockType.STONE;
-
-            case WOOD:
-                return BlockType.WOOD;
-
-            case SAND:
-                return BlockType.SAND;
-
-            case TORCH:
-                return BlockType.TORCH;
-
-            default:
-                return null;
-        }
-    }
-
-    // ============================================================
-    // INVENTORY
-    // ============================================================
-
-    private void addItem(
-            ItemType type,
-            int amount) {
-
-        for (ItemStack stack : hotbar) {
-
-            if (stack != null
-                    && stack.type == type
-                    && stack.amount < 64) {
-
-                int add =
-                        Math.min(
-                                amount,
-                                64 - stack.amount
-                        );
-
-                stack.amount += add;
-
-                amount -= add;
-
-                if (amount <= 0) {
-                    return;
-                }
-            }
-        }
-
-        for (int i = 0; i < hotbar.length; i++) {
-
-            if (hotbar[i] == null
-                    || hotbar[i].amount <= 0) {
-
-                hotbar[i] =
-                        new ItemStack(
-                                type,
-                                Math.min(amount, 64)
-                        );
-
-                return;
-            }
-        }
-    }
-
-    // ============================================================
-    // ENEMIES
-    // ============================================================
-
-    private void spawnEnemies() {
-
-        int maxEnemies =
-                isNight() ? 12 : 5;
-
-        if (enemies.size() >= maxEnemies) {
-            return;
-        }
-
-        if (random.nextDouble() > 0.015) {
-            return;
-        }
-
-        int side =
-                random.nextBoolean()
-                        ? -1
-                        : 1;
-
-        int x;
-
-        if (side < 0) {
-            x =
-                    (int) player.x
-                            - SCREEN_WIDTH;
-        } else {
-            x =
-                    (int) player.x
-                            + SCREEN_WIDTH;
-        }
-
-        x = Math.max(
-                20,
-                Math.min(
-                        x,
-                        WORLD_WIDTH * BLOCK_SIZE - 20
-                )
-        );
-
-        int blockX =
-                x / BLOCK_SIZE;
-
-        int groundY =
-                world.findGround(blockX);
-
-        if (groundY < 0) {
-            return;
-        }
-
-        EnemyType type;
-
-        if (isNight()) {
-
-            int r =
-                    random.nextInt(100);
-
-            if (r < 15) {
-                type = EnemyType.SKELETON;
-            } else if (r < 25) {
-                type = EnemyType.SPIDER;
             } else {
-                type = EnemyType.ZOMBIE;
+
+                grounded = false;
             }
-
-        } else {
-
-            type = EnemyType.SLIME;
         }
 
-        enemies.add(
-                new Enemy(
-                        x,
-                        groundY * BLOCK_SIZE - 30,
-                        type
-                )
-        );
+        if (playerY < -10) {
+
+            respawnPlayer();
+        }
     }
+
+    // ========================================================
+    // MOVE PLAYER
+    // ========================================================
+
+    private void movePlayer(
+            double dx,
+            double dz) {
+
+        double newX =
+                playerX + dx;
+
+        double newZ =
+                playerZ + dz;
+
+        if (canMoveTo(
+                newX,
+                playerY,
+                playerZ
+        )) {
+
+            playerX = newX;
+        }
+
+        if (canMoveTo(
+                playerX,
+                playerY,
+                newZ
+        )) {
+
+            playerZ = newZ;
+        }
+
+        playerX =
+                Math.max(
+                        1,
+                        Math.min(
+                                WORLD_SIZE - 2,
+                                playerX
+                        )
+                );
+
+        playerZ =
+                Math.max(
+                        1,
+                        Math.min(
+                                WORLD_SIZE - 2,
+                                playerZ
+                        )
+                );
+    }
+
+    private boolean canMoveTo(
+            double x,
+            double y,
+            double z) {
+
+        int bx =
+                (int) Math.floor(x);
+
+        int bz =
+                (int) Math.floor(z);
+
+        if (!insideWorld(
+                bx,
+                0,
+                bz
+        )) {
+
+            return false;
+        }
+
+        int ground =
+                getSurfaceY(
+                        bx,
+                        bz
+                );
+
+        return y >= ground;
+    }
+
+    // ========================================================
+    // JUMP
+    // ========================================================
+
+    private void jump() {
+
+        if (grounded) {
+
+            velocityY = -0.28;
+
+            grounded = false;
+        }
+    }
+
+    // ========================================================
+    // ENEMIES
+    // ========================================================
 
     private void updateEnemies() {
 
@@ -772,127 +996,57 @@ public class MiniCraft extends JPanel
 
         while (iterator.hasNext()) {
 
-            Enemy enemy = iterator.next();
+            Enemy enemy =
+                    iterator.next();
 
             enemy.update();
 
             if (enemy.health <= 0) {
 
-                score += 50;
-
-                gainXP(15);
-
-                addItem(
-                        ItemType.ROTTEN_FLESH,
-                        1
-                );
-
-                createExplosion(
-                        enemy.x,
-                        enemy.y
-                );
-
-                iterator.remove();
-
-                continue;
-            }
-
-            if (enemy.getBounds()
-                    .intersects(player.getBounds())) {
-
-                if (enemy.attackCooldown <= 0) {
-
-                    player.damage(enemy.damage);
-
-                    enemy.attackCooldown = 60;
-                }
-            }
-
-            if (enemy.attackCooldown > 0) {
-                enemy.attackCooldown--;
-            }
-        }
-    }
-
-    // ============================================================
-    // PROJECTILES
-    // ============================================================
-
-    private void updateProjectiles() {
-
-        Iterator<Projectile> iterator =
-                projectiles.iterator();
-
-        while (iterator.hasNext()) {
-
-            Projectile projectile =
-                    iterator.next();
-
-            projectile.update();
-
-            if (projectile.life <= 0) {
-
-                iterator.remove();
-
-                continue;
-            }
-
-            for (Enemy enemy : enemies) {
-
-                if (projectile.getBounds()
-                        .intersects(enemy.getBounds())) {
-
-                    enemy.health -= projectile.damage;
-
-                    projectile.life = 0;
-
-                    createExplosion(
-                            projectile.x,
-                            projectile.y
-                    );
-
-                    break;
-                }
-            }
-        }
-    }
-
-    // ============================================================
-    // DROPS
-    // ============================================================
-
-    private void updateDrops() {
-
-        Iterator<ItemDrop> iterator =
-                drops.iterator();
-
-        while (iterator.hasNext()) {
-
-            ItemDrop drop = iterator.next();
-
-            drop.update();
-
-            if (drop.getBounds()
-                    .intersects(player.getBounds())) {
-
-                addItem(
-                        drop.type,
-                        drop.amount
-                );
-
                 iterator.remove();
             }
         }
     }
 
-    private void handleItemPickup() {
+    // ========================================================
+    // SPAWN ENEMIES
+    // ========================================================
 
-        // Automatic pickup is handled in updateDrops().
+    private void spawnEnemiesAutomatically() {
+
+        long now =
+                System.currentTimeMillis();
+
+        if (now - lastEnemySpawn > 8000) {
+
+            lastEnemySpawn = now;
+
+            spawnEnemy();
+        }
     }
 
-    // ============================================================
+    // ========================================================
     // PARTICLES
-    // ============================================================
+    // ========================================================
+
+    private void createParticles(
+            double x,
+            double y,
+            double z,
+            Color color) {
+
+        for (int i = 0; i < 10; i++) {
+
+            particles.add(
+                    new Particle(
+                            x,
+                            y,
+                            z,
+                            color
+                    )
+            );
+        }
+    }
 
     private void updateParticles() {
 
@@ -901,805 +1055,1005 @@ public class MiniCraft extends JPanel
 
         while (iterator.hasNext()) {
 
-            Particle particle =
+            Particle p =
                     iterator.next();
 
-            particle.update();
+            p.update();
 
-            if (particle.life <= 0) {
+            if (p.life <= 0) {
+
                 iterator.remove();
             }
         }
     }
 
-    private void createExplosion(
-            double x,
-            double y) {
+    // ========================================================
+    // LEVEL
+    // ========================================================
 
-        for (int i = 0; i < 15; i++) {
+    private void checkLevel() {
 
-            particles.add(
-                    new Particle(
-                            x,
-                            y,
-                            random.nextDouble() * 6 - 3,
-                            random.nextDouble() * 6 - 3,
-                            30
-                    )
-            );
-        }
-    }
-
-    private void createBlockParticles(
-            double x,
-            double y,
-            BlockType block) {
-
-        for (int i = 0; i < 8; i++) {
-
-            particles.add(
-                    new Particle(
-                            x + random.nextInt(BLOCK_SIZE),
-                            y + random.nextInt(BLOCK_SIZE),
-                            random.nextDouble() * 3 - 1.5,
-                            random.nextDouble() * 3 - 1.5,
-                            20
-                    )
-            );
-        }
-    }
-
-    // ============================================================
-    // RAIN
-    // ============================================================
-
-    private void createRain() {
-
-        if (random.nextDouble() < 0.25) {
-
-            particles.add(
-                    new Particle(
-                            cameraX
-                                    + random.nextInt(SCREEN_WIDTH),
-                            cameraY
-                                    + random.nextInt(SCREEN_HEIGHT),
-                            0,
-                            8,
-                            25
-                    )
-            );
-        }
-    }
-
-    // ============================================================
-    // XP
-    // ============================================================
-
-    private void gainXP(int amount) {
-
-        xp += amount;
-
-        int required =
+        int needed =
                 level * 100;
 
-        while (xp >= required) {
+        if (xp >= needed) {
 
-            xp -= required;
+            xp -= needed;
 
             level++;
 
-            player.maxHealth += 5;
+            maxHealth += 10;
 
-            player.health =
-                    player.maxHealth;
-
-            required =
-                    level * 100;
+            health = maxHealth;
         }
     }
 
-    // ============================================================
-    // DISTANCE
-    // ============================================================
+    // ========================================================
+    // DAY / NIGHT
+    // ========================================================
 
-    private double distance(
-            double x1,
-            double y1,
-            double x2,
-            double y2) {
+    private void updateDayNight() {
 
-        return Math.sqrt(
-                Math.pow(x2 - x1, 2)
-                        + Math.pow(y2 - y1, 2)
+        dayTime += 0.0005;
+
+        if (dayTime > Math.PI * 2) {
+
+            dayTime = 0;
+        }
+    }
+
+    // ========================================================
+    // BLOCK BREAKING
+    // ========================================================
+
+    private void breakBlock() {
+
+        BlockHit hit =
+                raycast();
+
+        if (hit == null) {
+
+            return;
+        }
+
+        BlockType block =
+                world
+                        [hit.x]
+                        [hit.y]
+                        [hit.z];
+
+        if (block == BlockType.AIR) {
+
+            return;
+        }
+
+        world
+                [hit.x]
+                [hit.y]
+                [hit.z] =
+                BlockType.AIR;
+
+        score += 5;
+
+        xp += 2;
+
+        createParticles(
+                hit.x + 0.5,
+                hit.y + 0.5,
+                hit.z + 0.5,
+                block.color
         );
     }
 
-    // ============================================================
-    // DRAWING
-    // ============================================================
+    // ========================================================
+    // BLOCK PLACING
+    // ========================================================
+
+    private void placeBlock() {
+
+        BlockHit hit =
+                raycast();
+
+        if (hit == null) {
+
+            return;
+        }
+
+        int x =
+                hit.previousX;
+
+        int y =
+                hit.previousY;
+
+        int z =
+                hit.previousZ;
+
+        if (!insideWorld(
+                x,
+                y,
+                z
+        )) {
+
+            return;
+        }
+
+        if (world[x][y][z] ==
+                BlockType.AIR) {
+
+            world[x][y][z] =
+                    selectedBlock;
+        }
+    }
+
+    // ========================================================
+    // ATTACK
+    // ========================================================
+
+    private void attack() {
+
+        Enemy closest = null;
+
+        double closestDistance =
+                Double.MAX_VALUE;
+
+        for (Enemy enemy : enemies) {
+
+            double dx =
+                    enemy.x - playerX;
+
+            double dz =
+                    enemy.z - playerZ;
+
+            double distance =
+                    Math.sqrt(
+                            dx * dx +
+                            dz * dz
+                    );
+
+            if (distance < 5 &&
+                    distance < closestDistance) {
+
+                closestDistance =
+                        distance;
+
+                closest = enemy;
+            }
+        }
+
+        if (closest != null) {
+
+            closest.health -= 20;
+
+            createParticles(
+                    closest.x,
+                    closest.y + 0.8,
+                    closest.z,
+                    Color.RED
+            );
+        }
+    }
+
+    // ========================================================
+    // RAYCAST
+    // ========================================================
+
+    class BlockHit {
+
+        int x;
+        int y;
+        int z;
+
+        int previousX;
+        int previousY;
+        int previousZ;
+
+        BlockHit(
+                int x,
+                int y,
+                int z,
+                int previousX,
+                int previousY,
+                int previousZ) {
+
+            this.x = x;
+            this.y = y;
+            this.z = z;
+
+            this.previousX =
+                    previousX;
+
+            this.previousY =
+                    previousY;
+
+            this.previousZ =
+                    previousZ;
+        }
+    }
+
+    private BlockHit raycast() {
+
+        double directionX =
+                Math.sin(cameraYaw)
+                        * Math.cos(cameraPitch);
+
+        double directionY =
+                -Math.sin(cameraPitch);
+
+        double directionZ =
+                Math.cos(cameraYaw)
+                        * Math.cos(cameraPitch);
+
+        int previousX =
+                (int) Math.floor(
+                        playerX
+                );
+
+        int previousY =
+                (int) Math.floor(
+                        playerY + 1
+                );
+
+        int previousZ =
+                (int) Math.floor(
+                        playerZ
+                );
+
+        for (
+                double distance = 0;
+                distance < 7;
+                distance += 0.1
+        ) {
+
+            double x =
+                    playerX
+                    + directionX * distance;
+
+            double y =
+                    playerY + 1
+                    + directionY * distance;
+
+            double z =
+                    playerZ
+                    + directionZ * distance;
+
+            int bx =
+                    (int) Math.floor(x);
+
+            int by =
+                    (int) Math.floor(y);
+
+            int bz =
+                    (int) Math.floor(z);
+
+            if (!insideWorld(
+                    bx,
+                    by,
+                    bz
+            )) {
+
+                continue;
+            }
+
+            if (world[bx][by][bz]
+                    != BlockType.AIR) {
+
+                return new BlockHit(
+                        bx,
+                        by,
+                        bz,
+                        previousX,
+                        previousY,
+                        previousZ
+                );
+            }
+
+            previousX = bx;
+            previousY = by;
+            previousZ = bz;
+        }
+
+        return null;
+    }
+
+    // ========================================================
+    // RESPAWN
+    // ========================================================
+
+    private void respawnPlayer() {
+
+        playerX =
+                WORLD_SIZE / 2.0;
+
+        playerZ =
+                WORLD_SIZE / 2.0;
+
+        playerY =
+                getSurfaceY(
+                        WORLD_SIZE / 2,
+                        WORLD_SIZE / 2
+                ) + 2;
+
+        health =
+                maxHealth;
+
+        velocityY = 0;
+    }
+
+    // ========================================================
+    // DRAW
+    // ========================================================
 
     @Override
-    protected void paintComponent(Graphics graphics) {
+    protected void paintComponent(
+            Graphics g) {
 
-        super.paintComponent(graphics);
+        super.paintComponent(g);
 
-        Graphics2D g =
-                (Graphics2D) graphics.create();
+        Graphics2D g2 =
+                (Graphics2D) g.create();
 
-        drawSky(g);
+        // Background
 
-        g.translate(
-                -cameraX,
-                -cameraY
+        drawSky(
+                g2
         );
 
-        drawWorld(g);
+        // 3D world
 
-        drawDrops(g);
-
-        drawEnemies(g);
-
-        drawProjectiles(g);
-
-        drawPlayer(g);
-
-        drawParticles(g);
-
-        g.translate(
-                cameraX,
-                cameraY
+        drawWorld(
+                g2
         );
 
-        drawHUD(g);
+        // Enemies
 
-        if (showInventory) {
-            drawInventory(g);
-        }
+        drawEnemies(
+                g2
+        );
 
-        if (paused) {
-            drawPause(g);
-        }
+        // Particles
 
-        if (gameOver) {
-            drawGameOver(g);
-        }
+        drawParticles(
+                g2
+        );
 
-        g.dispose();
+        // UI
+
+        drawHUD(
+                g2
+        );
+
+        drawTouchControls(
+                g2
+        );
+
+        g2.dispose();
     }
 
-    // ============================================================
+    // ========================================================
     // SKY
-    // ============================================================
+    // ========================================================
 
-    private void drawSky(Graphics2D g) {
+    private void drawSky(
+            Graphics2D g) {
 
-        float brightness;
+        double sun =
+                Math.sin(dayTime);
 
-        if (isNight()) {
-            brightness = 0.2f;
-        } else {
-            brightness = 0.8f;
-        }
+        float brightness =
+                (float)
+                (0.55 + sun * 0.25);
 
-        int r =
-                (int) (135 * brightness);
-
-        int green =
-                (int) (206 * brightness);
+        brightness =
+                Math.max(
+                        0.2f,
+                        Math.min(
+                                1f,
+                                brightness
+                        )
+                );
 
         int blue =
-                (int) (235 * brightness);
+                (int)
+                (180 * brightness);
+
+        int cyan =
+                (int)
+                (220 * brightness);
 
         g.setColor(
                 new Color(
-                        Math.max(0, r),
-                        Math.max(0, green),
-                        Math.max(0, blue)
+                        80,
+                        cyan,
+                        blue
                 )
         );
 
         g.fillRect(
                 0,
                 0,
-                SCREEN_WIDTH,
-                SCREEN_HEIGHT
+                getWidth(),
+                getHeight()
         );
 
-        if (isNight()) {
+        // Sun
 
-            g.setColor(Color.WHITE);
-
-            for (int i = 0; i < 100; i++) {
-
-                int x =
-                        (i * 97) % SCREEN_WIDTH;
-
-                int y =
-                        (i * 53) % 300;
-
-                g.fillRect(
-                        x,
-                        y,
-                        2,
-                        2
+        int sunX =
+                (int)
+                (
+                        getWidth() * 0.75
+                        +
+                        Math.cos(dayTime)
+                        * getWidth()
+                        * 0.35
                 );
-            }
 
-        } else {
+        int sunY =
+                (int)
+                (
+                        getHeight() * 0.25
+                        -
+                        Math.sin(dayTime)
+                        * getHeight()
+                        * 0.20
+                );
 
-            g.setColor(Color.YELLOW);
+        g.setColor(
+                Color.YELLOW
+        );
 
-            int sunX =
-                    (int)
-                            (100
-                                    + timeOfDay
-                                    * 700);
-
-            int sunY =
-                    100;
-
-            g.fillOval(
-                    sunX,
-                    sunY,
-                    60,
-                    60
-            );
-        }
+        g.fillOval(
+                sunX - 30,
+                sunY - 30,
+                60,
+                60
+        );
     }
 
-    // ============================================================
-    // WORLD DRAW
-    // ============================================================
+    // ========================================================
+    // WORLD RENDERING
+    // ========================================================
 
-    private void drawWorld(Graphics2D g) {
+    private void drawWorld(
+            Graphics2D g) {
 
-        int startX =
+        ArrayList<RenderBlock> blocks =
+                new ArrayList<>();
+
+        int renderDistance = 16;
+
+        int minX =
                 Math.max(
                         0,
-                        (int) cameraX / BLOCK_SIZE - 2
+                        (int) playerX
+                                - renderDistance
                 );
 
-        int endX =
+        int maxX =
                 Math.min(
-                        WORLD_WIDTH,
-                        startX
-                                + SCREEN_WIDTH
-                                / BLOCK_SIZE
-                                + 4
+                        WORLD_SIZE - 1,
+                        (int) playerX
+                                + renderDistance
                 );
 
-        int startY =
+        int minZ =
                 Math.max(
                         0,
-                        (int) cameraY / BLOCK_SIZE - 2
+                        (int) playerZ
+                                - renderDistance
                 );
 
-        int endY =
+        int maxZ =
                 Math.min(
-                        WORLD_HEIGHT,
-                        startY
-                                + SCREEN_HEIGHT
-                                / BLOCK_SIZE
-                                + 4
+                        WORLD_SIZE - 1,
+                        (int) playerZ
+                                + renderDistance
                 );
 
-        for (int y = startY; y < endY; y++) {
+        for (int x = minX;
+             x <= maxX;
+             x++) {
 
-            for (int x = startX; x < endX; x++) {
+            for (int z = minZ;
+                 z <= maxZ;
+                 z++) {
 
-                BlockType block =
-                        world.get(x, y);
+                for (
+                        int y = 0;
+                        y < WORLD_HEIGHT;
+                        y++
+                ) {
 
-                if (block != null) {
+                    BlockType type =
+                            world[x][y][z];
 
-                    drawBlock(
-                            g,
-                            block,
-                            x * BLOCK_SIZE,
-                            y * BLOCK_SIZE
+                    if (type ==
+                            BlockType.AIR) {
+
+                        continue;
+                    }
+
+                    double dx =
+                            x - playerX;
+
+                    double dy =
+                            y - playerY;
+
+                    double dz =
+                            z - playerZ;
+
+                    double distance =
+                            Math.sqrt(
+                                    dx * dx
+                                    +
+                                    dz * dz
+                            );
+
+                    if (distance >
+                            renderDistance) {
+
+                        continue;
+                    }
+
+                    RenderPoint p =
+                            project(
+                                    x + 0.5,
+                                    y + 0.5,
+                                    z + 0.5
+                            );
+
+                    if (p == null) {
+
+                        continue;
+                    }
+
+                    blocks.add(
+                            new RenderBlock(
+                                    p,
+                                    type,
+                                    distance
+                            )
                     );
                 }
             }
         }
-    }
 
-    private void drawBlock(
-            Graphics2D g,
-            BlockType block,
-            int x,
-            int y) {
+        // Painter's algorithm
 
-        Color color;
-
-        switch (block) {
-
-            case GRASS:
-                color = new Color(55, 170, 60);
-                break;
-
-            case DIRT:
-                color = new Color(130, 75, 35);
-                break;
-
-            case STONE:
-                color = new Color(105, 105, 105);
-                break;
-
-            case WOOD:
-                color = new Color(120, 75, 35);
-                break;
-
-            case LEAVES:
-                color = new Color(40, 150, 55);
-                break;
-
-            case SAND:
-                color = new Color(225, 205, 120);
-                break;
-
-            case WATER:
-                color = new Color(45, 130, 220);
-                break;
-
-            case COAL_ORE:
-                color = Color.DARK_GRAY;
-                break;
-
-            case IRON_ORE:
-                color = new Color(170, 140, 120);
-                break;
-
-            case GOLD_ORE:
-                color = new Color(230, 190, 40);
-                break;
-
-            case DIAMOND_ORE:
-                color = new Color(70, 220, 230);
-                break;
-
-            case BEDROCK:
-                color = new Color(35, 35, 35);
-                break;
-
-            case TORCH:
-                color = new Color(255, 170, 30);
-                break;
-
-            case LAVA:
-                color = new Color(240, 70, 20);
-                break;
-
-            default:
-                color = Color.MAGENTA;
-        }
-
-        g.setColor(color);
-
-        g.fillRect(
-                x,
-                y,
-                BLOCK_SIZE,
-                BLOCK_SIZE
+        blocks.sort(
+                Comparator.comparingDouble(
+                        b -> -b.distance
+                )
         );
 
-        // Simple texture
-        if (block == BlockType.STONE
-                || block == BlockType.DIRT) {
+        for (RenderBlock block :
+                blocks) {
+
+            drawVoxel(
+                    g,
+                    block
+            );
+        }
+    }
+
+    // ========================================================
+    // RENDER BLOCK
+    // ========================================================
+
+    class RenderBlock {
+
+        RenderPoint point;
+
+        BlockType type;
+
+        double distance;
+
+        RenderBlock(
+                RenderPoint point,
+                BlockType type,
+                double distance) {
+
+            this.point = point;
+            this.type = type;
+            this.distance = distance;
+        }
+    }
+
+    // ========================================================
+    // 3D POINT
+    // ========================================================
+
+    class RenderPoint {
+
+        double x;
+        double y;
+
+        double depth;
+
+        RenderPoint(
+                double x,
+                double y,
+                double depth) {
+
+            this.x = x;
+            this.y = y;
+            this.depth = depth;
+        }
+    }
+
+    // ========================================================
+    // PROJECTION
+    // ========================================================
+
+    private RenderPoint project(
+            double x,
+            double y,
+            double z) {
+
+        double dx =
+                x - playerX;
+
+        double dy =
+                y - (playerY + 1);
+
+        double dz =
+                z - playerZ;
+
+        // Rotate around Y
+
+        double cos =
+                Math.cos(cameraYaw);
+
+        double sin =
+                Math.sin(cameraYaw);
+
+        double rx =
+                dx * cos
+                -
+                dz * sin;
+
+        double rz =
+                dx * sin
+                +
+                dz * cos;
+
+        // Pitch
+
+        double cosPitch =
+                Math.cos(cameraPitch);
+
+        double sinPitch =
+                Math.sin(cameraPitch);
+
+        double ry =
+                dy * cosPitch
+                -
+                rz * sinPitch;
+
+        double depth =
+                dy * sinPitch
+                +
+                rz * cosPitch;
+
+        if (depth <= 0.2) {
+
+            return null;
+        }
+
+        double scale =
+                420 /
+                depth;
+
+        double screenX =
+                getWidth() / 2.0
+                +
+                rx * scale;
+
+        double screenY =
+                getHeight() / 2.0
+                -
+                ry * scale;
+
+        return new RenderPoint(
+                screenX,
+                screenY,
+                depth
+        );
+    }
+
+    // ========================================================
+    // DRAW VOXEL
+    // ========================================================
+
+    private void drawVoxel(
+            Graphics2D g,
+            RenderBlock block) {
+
+        RenderPoint p =
+                block.point;
+
+        int size =
+                (int)
+                Math.max(
+                        3,
+                        260 / p.depth
+                );
+
+        int x =
+                (int) p.x;
+
+        int y =
+                (int) p.y;
+
+        Color base =
+                block.type.color;
+
+        if (block.type ==
+                BlockType.WATER) {
 
             g.setColor(
                     new Color(
-                            Math.max(
-                                    0,
-                                    color.getRed() - 20
-                            ),
-                            Math.max(
-                                    0,
-                                    color.getGreen() - 20
-                            ),
-                            Math.max(
-                                    0,
-                                    color.getBlue() - 20
-                            )
+                            40,
+                            130,
+                            230,
+                            130
                     )
             );
 
-            for (int i = 0; i < 4; i++) {
+        } else {
 
-                int px =
-                        x + random.nextInt(BLOCK_SIZE);
-
-                int py =
-                        y + random.nextInt(BLOCK_SIZE);
-
-                g.fillRect(
-                        px,
-                        py,
-                        3,
-                        3
-                );
-            }
+            g.setColor(base);
         }
 
-        if (block == BlockType.TORCH) {
+        // Main face
 
-            g.setColor(Color.BLACK);
+        g.fillRect(
+                x - size / 2,
+                y - size / 2,
+                size,
+                size
+        );
 
-            g.fillRect(
-                    x + 14,
-                    y + 12,
-                    4,
-                    17
-            );
+        // Top face
 
-            g.setColor(Color.ORANGE);
+        Polygon top =
+                new Polygon();
 
-            g.fillOval(
-                    x + 8,
-                    y + 4,
-                    16,
-                    16
-            );
-        }
+        top.addPoint(
+                x - size / 2,
+                y - size / 2
+        );
+
+        top.addPoint(
+                x,
+                y - size
+        );
+
+        top.addPoint(
+                x + size / 2,
+                y - size / 2
+        );
+
+        g.setColor(
+                shade(
+                        base,
+                        1.25
+                )
+        );
+
+        g.fillPolygon(top);
+
+        // Side face
+
+        Polygon side =
+                new Polygon();
+
+        side.addPoint(
+                x + size / 2,
+                y - size / 2
+        );
+
+        side.addPoint(
+                x,
+                y - size
+        );
+
+        side.addPoint(
+                x,
+                y
+        );
+
+        side.addPoint(
+                x + size / 2,
+                y + size / 2
+        );
+
+        g.setColor(
+                shade(
+                        base,
+                        0.65
+                )
+        );
+
+        g.fillPolygon(side);
 
         g.setColor(
                 new Color(
                         0,
                         0,
                         0,
-                        40
+                        70
                 )
         );
 
         g.drawRect(
-                x,
-                y,
-                BLOCK_SIZE,
-                BLOCK_SIZE
+                x - size / 2,
+                y - size / 2,
+                size,
+                size
         );
     }
 
-    // ============================================================
-    // PLAYER DRAW
-    // ============================================================
+    // ========================================================
+    // COLOR SHADING
+    // ========================================================
 
-    private void drawPlayer(Graphics2D g) {
+    private Color shade(
+            Color color,
+            double amount) {
 
-        g.setColor(new Color(220, 40, 40));
+        int r =
+                (int)
+                Math.max(
+                        0,
+                        Math.min(
+                                255,
+                                color.getRed()
+                                        * amount
+                        )
+                );
 
-        g.fillRect(
-                (int) player.x,
-                (int) player.y,
-                player.width,
-                player.height
-        );
+        int g =
+                (int)
+                Math.max(
+                        0,
+                        Math.min(
+                                255,
+                                color.getGreen()
+                                        * amount
+                        )
+                );
 
-        g.setColor(Color.BLACK);
+        int b =
+                (int)
+                Math.max(
+                        0,
+                        Math.min(
+                                255,
+                                color.getBlue()
+                                        * amount
+                        )
+                );
 
-        g.drawRect(
-                (int) player.x,
-                (int) player.y,
-                player.width,
-                player.height
-        );
-
-        // Face
-        g.setColor(Color.WHITE);
-
-        g.fillRect(
-                (int) player.x + 5,
-                (int) player.y + 8,
-                5,
-                5
-        );
-
-        g.fillRect(
-                (int) player.x + 15,
-                (int) player.y + 8,
-                5,
-                5
+        return new Color(
+                r,
+                g,
+                b,
+                color.getAlpha()
         );
     }
 
-    // ============================================================
-    // ENEMY DRAW
-    // ============================================================
+    // ========================================================
+    // ENEMY DRAWING
+    // ========================================================
 
-    private void drawEnemies(Graphics2D g) {
-
-        for (Enemy enemy : enemies) {
-
-            g.setColor(
-                    enemy.type.color
-            );
-
-            g.fillRect(
-                    (int) enemy.x,
-                    (int) enemy.y,
-                    enemy.width,
-                    enemy.height
-            );
-
-            g.setColor(Color.BLACK);
-
-            g.drawRect(
-                    (int) enemy.x,
-                    (int) enemy.y,
-                    enemy.width,
-                    enemy.height
-            );
-
-            // Eyes
-            g.setColor(Color.WHITE);
-
-            g.fillRect(
-                    (int) enemy.x + 5,
-                    (int) enemy.y + 8,
-                    5,
-                    5
-            );
-
-            g.fillRect(
-                    (int) enemy.x + 18,
-                    (int) enemy.y + 8,
-                    5,
-                    5
-            );
-        }
-    }
-
-    // ============================================================
-    // DROPS DRAW
-    // ============================================================
-
-    private void drawDrops(Graphics2D g) {
-
-        for (ItemDrop drop : drops) {
-
-            g.setColor(
-                    drop.type.color
-            );
-
-            g.fillOval(
-                    (int) drop.x,
-                    (int) drop.y,
-                    15,
-                    15
-            );
-        }
-    }
-
-    // ============================================================
-    // PROJECTILE DRAW
-    // ============================================================
-
-    private void drawProjectiles(
+    private void drawEnemies(
             Graphics2D g) {
 
-        for (Projectile projectile :
-                projectiles) {
+        for (Enemy enemy :
+                enemies) {
 
-            g.setColor(Color.YELLOW);
+            RenderPoint p =
+                    project(
+                            enemy.x,
+                            enemy.y + 0.8,
+                            enemy.z
+                    );
+
+            if (p == null) {
+
+                continue;
+            }
+
+            int size =
+                    (int)
+                    Math.max(
+                            12,
+                            180 / p.depth
+                    );
+
+            g.setColor(
+                    new Color(
+                            50,
+                            220,
+                            70
+                    )
+            );
+
+            g.fillRect(
+                    (int) p.x - size / 2,
+                    (int) p.y - size / 2,
+                    size,
+                    size
+            );
+
+            g.setColor(
+                    Color.BLACK
+            );
 
             g.fillOval(
-                    (int) projectile.x,
-                    (int) projectile.y,
-                    8,
-                    8
+                    (int) p.x - size / 4,
+                    (int) p.y - size / 6,
+                    size / 8,
+                    size / 8
+            );
+
+            g.fillOval(
+                    (int) p.x + size / 8,
+                    (int) p.y - size / 6,
+                    size / 8,
+                    size / 8
             );
         }
     }
 
-    // ============================================================
-    // PARTICLES DRAW
-    // ============================================================
+    // ========================================================
+    // PARTICLE DRAWING
+    // ========================================================
 
     private void drawParticles(
             Graphics2D g) {
 
-        g.setColor(
-                new Color(
-                        255,
-                        220,
-                        100
-                )
-        );
-
-        for (Particle particle :
+        for (Particle p :
                 particles) {
 
+            RenderPoint rp =
+                    project(
+                            p.x,
+                            p.y,
+                            p.z
+                    );
+
+            if (rp == null) {
+
+                continue;
+            }
+
+            int size =
+                    Math.max(
+                            2,
+                            (int)
+                            (80 / rp.depth)
+                    );
+
+            g.setColor(
+                    p.color
+            );
+
             g.fillRect(
-                    (int) particle.x,
-                    (int) particle.y,
-                    4,
-                    4
+                    (int) rp.x,
+                    (int) rp.y,
+                    size,
+                    size
             );
         }
     }
 
-    // ============================================================
+    // ========================================================
     // HUD
-    // ============================================================
+    // ========================================================
 
-    private void drawHUD(Graphics2D g) {
-
-        // Health background
-        g.setColor(Color.DARK_GRAY);
-
-        g.fillRect(
-                15,
-                15,
-                220,
-                25
-        );
-
-        g.setColor(Color.RED);
-
-        int healthWidth =
-                (int)
-                        (210.0
-                                * player.health
-                                / player.maxHealth);
-
-        g.fillRect(
-                20,
-                20,
-                healthWidth,
-                15
-        );
-
-        g.setColor(Color.WHITE);
-
-        g.drawString(
-                "❤️ "
-                        + player.health
-                        + " / "
-                        + player.maxHealth,
-                25,
-                33
-        );
-
-        g.drawString(
-                "Level: "
-                        + level
-                        + "   XP: "
-                        + xp
-                        + "/"
-                        + (level * 100),
-                15,
-                60
-        );
-
-        g.drawString(
-                "Score: " + score,
-                15,
-                82
-        );
-
-        g.drawString(
-                isNight()
-                        ? "🌙 NIGHT"
-                        : "☀ DAY",
-                15,
-                104
-        );
-
-        if (rainEnabled) {
-
-            g.drawString(
-                    "RAIN",
-                    15,
-                    126
-            );
-        }
-
-        drawHotbar(g);
-
-        if (showMinimap) {
-            drawMinimap(g);
-        }
-
-        g.setColor(Color.WHITE);
-
-        g.drawString(
-                "A/D Move | SPACE Jump | SHIFT Sprint | "
-                        + "Left Mine/Attack | Right Place",
-                250,
-                SCREEN_HEIGHT - 20
-        );
-    }
-
-    // ============================================================
-    // HOTBAR DRAW
-    // ============================================================
-
-    private void drawHotbar(
+    private void drawHUD(
             Graphics2D g) {
-
-        int startX =
-                SCREEN_WIDTH / 2
-                        - (HOTBAR_SIZE * 52) / 2;
-
-        int y =
-                SCREEN_HEIGHT - 75;
-
-        for (int i = 0;
-             i < HOTBAR_SIZE;
-             i++) {
-
-            if (i == selectedSlot) {
-
-                g.setColor(Color.YELLOW);
-
-            } else {
-
-                g.setColor(Color.DARK_GRAY);
-            }
-
-            g.fillRect(
-                    startX + i * 52,
-                    y,
-                    48,
-                    48
-            );
-
-            g.setColor(Color.WHITE);
-
-            g.drawRect(
-                    startX + i * 52,
-                    y,
-                    48,
-                    48
-            );
-
-            if (hotbar[i] != null
-                    && hotbar[i].amount > 0) {
-
-                g.setColor(
-                        hotbar[i].type.color
-                );
-
-                g.fillRect(
-                        startX + i * 52 + 8,
-                        y + 8,
-                        30,
-                        30
-                );
-
-                g.setColor(Color.WHITE);
-
-                g.drawString(
-                        "" + hotbar[i].amount,
-                        startX + i * 52 + 32,
-                        y + 45
-                );
-            }
-
-            g.setColor(Color.WHITE);
-
-            g.drawString(
-                    "" + (i + 1),
-                    startX + i * 52 + 3,
-                    y + 12
-            );
-        }
-    }
-
-    // ============================================================
-    // MINIMAP
-    // ============================================================
-
-    private void drawMinimap(
-            Graphics2D g) {
-
-        int width = 180;
-        int height = 100;
-
-        int x =
-                SCREEN_WIDTH
-                        - width
-                        - 20;
-
-        int y = 20;
 
         g.setColor(
                 new Color(
@@ -1710,732 +2064,665 @@ public class MiniCraft extends JPanel
                 )
         );
 
-        g.fillRect(
-                x,
-                y,
-                width,
-                height
+        g.fillRoundRect(
+                15,
+                15,
+                270,
+                130,
+                15,
+                15
         );
-
-        double sx =
-                width
-                        / (double) WORLD_WIDTH;
-
-        double sy =
-                height
-                        / (double) WORLD_HEIGHT;
-
-        for (int wx = 0;
-             wx < WORLD_WIDTH;
-             wx += 2) {
-
-            int ground =
-                    world.findGround(wx);
-
-            if (ground >= 0) {
-
-                int px =
-                        x + (int) (wx * sx);
-
-                int py =
-                        y + (int) (ground * sy);
-
-                g.setColor(
-                        Color.GREEN
-                );
-
-                g.fillRect(
-                        px,
-                        py,
-                        2,
-                        2
-                );
-            }
-        }
-
-        int px =
-                x
-                        + (int)
-                        (player.x
-                                / BLOCK_SIZE
-                                * sx);
-
-        int py =
-                y
-                        + (int)
-                        (player.y
-                                / BLOCK_SIZE
-                                * sy);
-
-        g.setColor(Color.RED);
-
-        g.fillRect(
-                px,
-                py,
-                5,
-                5
-        );
-    }
-
-    // ============================================================
-    // INVENTORY
-    // ============================================================
-
-    private void drawInventory(
-            Graphics2D g) {
-
-        int width = 600;
-        int height = 450;
-
-        int x =
-                SCREEN_WIDTH / 2
-                        - width / 2;
-
-        int y =
-                SCREEN_HEIGHT / 2
-                        - height / 2;
 
         g.setColor(
-                new Color(
-                        25,
-                        25,
-                        25,
-                        245
-                )
-        );
-
-        g.fillRect(
-                x,
-                y,
-                width,
-                height
-        );
-
-        g.setColor(Color.WHITE);
-
-        g.drawRect(
-                x,
-                y,
-                width,
-                height
+                Color.WHITE
         );
 
         g.setFont(
                 new Font(
                         "Arial",
                         Font.BOLD,
-                        24
-                )
-        );
-
-        g.drawString(
-                "INVENTORY & CRAFTING",
-                x + 25,
-                y + 40
-        );
-
-        g.setFont(
-                new Font(
-                        "Arial",
-                        Font.PLAIN,
                         15
                 )
         );
 
-        int row = 0;
+        g.drawString(
+                "MINICRAFT 3D",
+                30,
+                40
+        );
 
-        for (ItemStack stack : hotbar) {
+        g.drawString(
+                "Health: " +
+                        health +
+                        "/" +
+                        maxHealth,
+                30,
+                65
+        );
 
-            if (stack != null
-                    && stack.amount > 0) {
+        g.drawString(
+                "Level: " +
+                        level +
+                        "   XP: " +
+                        xp,
+                30,
+                88
+        );
+
+        g.drawString(
+                "Score: " +
+                        score,
+                30,
+                111
+        );
+
+        g.drawString(
+                "Block: " +
+                        selectedBlock,
+                30,
+                134
+        );
+
+        drawHealthBar(g);
+
+        drawHotbar(g);
+
+        drawMinimap(g);
+    }
+
+    // ========================================================
+    // HEALTH BAR
+    // ========================================================
+
+    private void drawHealthBar(
+            Graphics2D g) {
+
+        int x = 30;
+        int y = 155;
+
+        int width = 220;
+
+        g.setColor(
+                Color.DARK_GRAY
+        );
+
+        g.fillRect(
+                x,
+                y,
+                width,
+                15
+        );
+
+        g.setColor(
+                Color.RED
+        );
+
+        g.fillRect(
+                x,
+                y,
+                (int)
+                (
+                        width
+                        *
+                        ((double) health
+                                / maxHealth)
+                ),
+                15
+        );
+    }
+
+    // ========================================================
+    // HOTBAR
+    // ========================================================
+
+    private void drawHotbar(
+            Graphics2D g) {
+
+        int slotSize = 55;
+
+        int total =
+                hotbar.length
+                        * slotSize;
+
+        int start =
+                (getWidth() - total)
+                        / 2;
+
+        int y =
+                getHeight()
+                        - slotSize
+                        - 15;
+
+        for (int i = 0;
+             i < hotbar.length;
+             i++) {
+
+            int x =
+                    start
+                    + i * slotSize;
+
+            if (i == selectedSlot) {
 
                 g.setColor(
-                        stack.type.color
+                        Color.YELLOW
                 );
 
-                g.fillRect(
-                        x + 30,
-                        y + 65 + row * 35,
-                        25,
-                        25
+            } else {
+
+                g.setColor(
+                        new Color(
+                                0,
+                                0,
+                                0,
+                                170
+                        )
                 );
-
-                g.setColor(Color.WHITE);
-
-                g.drawString(
-                        stack.type.name()
-                                + " x"
-                                + stack.amount,
-                        x + 70,
-                        y + 84 + row * 35
-                );
-
-                row++;
             }
+
+            g.fillRect(
+                    x,
+                    y,
+                    slotSize - 4,
+                    slotSize - 4
+            );
+
+            g.setColor(
+                    hotbar[i].color
+            );
+
+            g.fillRect(
+                    x + 8,
+                    y + 8,
+                    slotSize - 20,
+                    slotSize - 20
+            );
+
+            g.setColor(
+                    Color.WHITE
+            );
+
+            g.setFont(
+                    new Font(
+                            "Arial",
+                            Font.BOLD,
+                            12
+                    )
+            );
+
+            g.drawString(
+                    "" + (i + 1),
+                    x + 5,
+                    y + 15
+            );
         }
-
-        g.drawString(
-                "Press E to close",
-                x + 25,
-                y + height - 25
-        );
-
-        g.drawString(
-                "F = Eat apple",
-                x + 300,
-                y + 100
-        );
-
-        g.drawString(
-                "WOOD x4 → PLANK",
-                x + 300,
-                y + 140
-        );
-
-        g.drawString(
-                "STONE x3 + WOOD x2 → PICKAXE",
-                x + 300,
-                y + 180
-        );
-
-        g.drawString(
-                "WOOD x2 → TORCH x4",
-                x + 300,
-                y + 220
-        );
     }
 
-    // ============================================================
-    // PAUSE
-    // ============================================================
+    // ========================================================
+    // MINIMAP
+    // ========================================================
 
-    private void drawPause(
+    private void drawMinimap(
             Graphics2D g) {
+
+        int size = 140;
+
+        int x =
+                getWidth()
+                        - size
+                        - 20;
+
+        int y = 20;
 
         g.setColor(
                 new Color(
                         0,
                         0,
                         0,
-                        180
+                        170
                 )
         );
 
         g.fillRect(
-                0,
-                0,
-                SCREEN_WIDTH,
-                SCREEN_HEIGHT
+                x,
+                y,
+                size,
+                size
         );
 
-        g.setColor(Color.WHITE);
+        int cell =
+                size / 32;
 
-        g.setFont(
-                new Font(
-                        "Arial",
-                        Font.BOLD,
-                        50
-                )
-        );
+        int centerX =
+                (int)
+                playerX;
 
-        g.drawString(
-                "PAUSED",
-                SCREEN_WIDTH / 2 - 100,
-                SCREEN_HEIGHT / 2
-        );
+        int centerZ =
+                (int)
+                playerZ;
 
-        g.setFont(
-                new Font(
-                        "Arial",
-                        Font.PLAIN,
-                        18
-                )
-        );
+        for (int dx = -16;
+             dx < 16;
+             dx++) {
 
-        g.drawString(
-                "Press ESC to continue",
-                SCREEN_WIDTH / 2 - 100,
-                SCREEN_HEIGHT / 2 + 40
-        );
-    }
+            for (int dz = -16;
+                 dz < 16;
+                 dz++) {
 
-    // ============================================================
-    // GAME OVER
-    // ============================================================
+                int wx =
+                        centerX + dx;
 
-    private void drawGameOver(
-            Graphics2D g) {
+                int wz =
+                        centerZ + dz;
 
-        g.setColor(
-                new Color(
+                if (!insideWorld(
+                        wx,
                         0,
-                        0,
-                        0,
-                        210
-                )
-        );
+                        wz
+                )) {
 
-        g.fillRect(
-                0,
-                0,
-                SCREEN_WIDTH,
-                SCREEN_HEIGHT
-        );
-
-        g.setColor(Color.RED);
-
-        g.setFont(
-                new Font(
-                        "Arial",
-                        Font.BOLD,
-                        55
-                )
-        );
-
-        g.drawString(
-                "GAME OVER",
-                SCREEN_WIDTH / 2 - 170,
-                SCREEN_HEIGHT / 2
-        );
-
-        g.setColor(Color.WHITE);
-
-        g.setFont(
-                new Font(
-                        "Arial",
-                        Font.PLAIN,
-                        20
-                )
-        );
-
-        g.drawString(
-                "Score: " + score,
-                SCREEN_WIDTH / 2 - 50,
-                SCREEN_HEIGHT / 2 + 45
-        );
-
-        g.drawString(
-                "Press ENTER to respawn",
-                SCREEN_WIDTH / 2 - 100,
-                SCREEN_HEIGHT / 2 + 85
-        );
-    }
-
-    // ============================================================
-    // SAVE GAME
-    // ============================================================
-
-    private void saveGame() {
-
-        try {
-
-            ObjectOutputStream out =
-                    new ObjectOutputStream(
-                            new FileOutputStream(
-                                    "minicraft_save.dat"
-                            )
-                    );
-
-            out.writeObject(world.blocks);
-
-            out.writeDouble(player.x);
-            out.writeDouble(player.y);
-
-            out.writeInt(player.health);
-
-            out.writeInt(score);
-            out.writeInt(level);
-            out.writeInt(xp);
-
-            out.writeDouble(timeOfDay);
-
-            out.close();
-
-            System.out.println(
-                    "Game saved."
-            );
-
-        } catch (Exception ex) {
-
-            ex.printStackTrace();
-        }
-    }
-
-    // ============================================================
-    // LOAD GAME
-    // ============================================================
-
-    @SuppressWarnings("unchecked")
-    private void loadGame() {
-
-        try {
-
-            ObjectInputStream in =
-                    new ObjectInputStream(
-                            new FileInputStream(
-                                    "minicraft_save.dat"
-                            )
-                    );
-
-            world.blocks =
-                    (HashMap<String, BlockData>)
-                            in.readObject();
-
-            player.x = in.readDouble();
-            player.y = in.readDouble();
-
-            player.health =
-                    in.readInt();
-
-            score =
-                    in.readInt();
-
-            level =
-                    in.readInt();
-
-            xp =
-                    in.readInt();
-
-            timeOfDay =
-                    in.readDouble();
-
-            in.close();
-
-            System.out.println(
-                    "Game loaded."
-            );
-
-        } catch (Exception ex) {
-
-            System.out.println(
-                    "No save file found."
-            );
-        }
-    }
-
-    // ============================================================
-    // KEYBOARD
-    // ============================================================
-
-    @Override
-    public void keyPressed(
-            KeyEvent e) {
-
-        int code =
-                e.getKeyCode();
-
-        if (code == KeyEvent.VK_A) {
-            moveLeft = true;
-        }
-
-        if (code == KeyEvent.VK_D) {
-            moveRight = true;
-        }
-
-        if (code == KeyEvent.VK_SHIFT) {
-            sprint = true;
-        }
-
-        if (code == KeyEvent.VK_SPACE) {
-            jumpPressed = true;
-        }
-
-        if (code >= KeyEvent.VK_1
-                && code <= KeyEvent.VK_9) {
-
-            selectedSlot =
-                    code - KeyEvent.VK_1;
-        }
-
-        if (code == KeyEvent.VK_E) {
-
-            showInventory =
-                    !showInventory;
-        }
-
-        if (code == KeyEvent.VK_ESCAPE) {
-
-            paused =
-                    !paused;
-        }
-
-        if (code == KeyEvent.VK_F5) {
-
-            saveGame();
-        }
-
-        if (code == KeyEvent.VK_F9) {
-
-            loadGame();
-        }
-
-        if (code == KeyEvent.VK_M) {
-
-            showMinimap =
-                    !showMinimap;
-        }
-
-        if (code == KeyEvent.VK_N) {
-
-            fastTime =
-                    !fastTime;
-        }
-
-        if (code == KeyEvent.VK_T) {
-
-            rainEnabled =
-                    !rainEnabled;
-        }
-
-        if (code == KeyEvent.VK_F) {
-
-            eatFood();
-        }
-
-        if (code == KeyEvent.VK_ENTER
-                && gameOver) {
-
-            player.respawn();
-
-            player.health =
-                    player.maxHealth;
-
-            gameOver = false;
-
-            enemies.clear();
-        }
-
-        // Basic crafting
-        if (code == KeyEvent.VK_C) {
-
-            craftTorch();
-        }
-    }
-
-    private void eatFood() {
-
-        for (ItemStack stack : hotbar) {
-
-            if (stack != null
-                    && stack.type == ItemType.APPLE
-                    && stack.amount > 0) {
-
-                if (player.health
-                        < player.maxHealth) {
-
-                    player.health =
-                            Math.min(
-                                    player.maxHealth,
-                                    player.health + 20
-                            );
-
-                    stack.amount--;
-
-                    return;
+                    continue;
                 }
-            }
-        }
-    }
 
-    private void craftTorch() {
-
-        int wood =
-                countItem(ItemType.WOOD);
-
-        int coal =
-                countItem(ItemType.COAL);
-
-        if (wood >= 1
-                && coal >= 1) {
-
-            removeItem(
-                    ItemType.WOOD,
-                    1
-            );
-
-            removeItem(
-                    ItemType.COAL,
-                    1
-            );
-
-            addItem(
-                    ItemType.TORCH,
-                    4
-            );
-        }
-    }
-
-    private int countItem(
-            ItemType type) {
-
-        int total = 0;
-
-        for (ItemStack stack : hotbar) {
-
-            if (stack != null
-                    && stack.type == type) {
-
-                total += stack.amount;
-            }
-        }
-
-        return total;
-    }
-
-    private void removeItem(
-            ItemType type,
-            int amount) {
-
-        for (ItemStack stack : hotbar) {
-
-            if (stack != null
-                    && stack.type == type) {
-
-                int remove =
-                        Math.min(
-                                amount,
-                                stack.amount
+                int sy =
+                        getSurfaceY(
+                                wx,
+                                wz
                         );
 
-                stack.amount -= remove;
+                BlockType b =
+                        world[wx][sy][wz];
 
-                amount -= remove;
+                g.setColor(
+                        b.color
+                );
 
-                if (amount <= 0) {
-                    return;
-                }
+                int px =
+                        x
+                        + (dx + 16)
+                        * cell;
+
+                int py =
+                        y
+                        + (dz + 16)
+                        * cell;
+
+                g.fillRect(
+                        px,
+                        py,
+                        cell,
+                        cell
+                );
             }
         }
+
+        g.setColor(
+                Color.RED
+        );
+
+        g.fillRect(
+                x + size / 2 - 3,
+                y + size / 2 - 3,
+                7,
+                7
+        );
     }
 
-    @Override
-    public void keyReleased(
-            KeyEvent e) {
+    // ========================================================
+    // TOUCH CONTROLS
+    // ========================================================
 
-        int code =
-                e.getKeyCode();
+    private void updateTouchButtons() {
 
-        if (code == KeyEvent.VK_A) {
-            moveLeft = false;
-        }
+        int w = getWidth();
 
-        if (code == KeyEvent.VK_D) {
-            moveRight = false;
-        }
+        int h = getHeight();
 
-        if (code == KeyEvent.VK_SHIFT) {
-            sprint = false;
-        }
+        int size =
+                Math.max(
+                        55,
+                        Math.min(
+                                90,
+                                Math.min(
+                                        w,
+                                        h
+                                ) / 7
+                        )
+                );
+
+        int margin = 20;
+
+        touchLeftButton =
+                new Rectangle(
+                        margin,
+                        h - size - margin,
+                        size,
+                        size
+                );
+
+        touchRightButton =
+                new Rectangle(
+                        margin + size + 10,
+                        h - size - margin,
+                        size,
+                        size
+                );
+
+        touchUp =
+                new Rectangle(
+                        margin + size / 2,
+                        h - size * 2
+                                - margin - 10,
+                        size,
+                        size
+                );
+
+        touchDown =
+                new Rectangle(
+                        margin + size / 2,
+                        h - size
+                                - margin,
+                        size,
+                        size
+                );
+
+        touchJump =
+                new Rectangle(
+                        w - size * 2 - 30,
+                        h - size - margin,
+                        size,
+                        size
+                );
+
+        touchBreak =
+                new Rectangle(
+                        w - size - margin,
+                        h - size * 2 - 30,
+                        size,
+                        size
+                );
+
+        touchPlace =
+                new Rectangle(
+                        w - size - margin,
+                        h - size - margin,
+                        size,
+                        size
+                );
+
+        touchAttack =
+                new Rectangle(
+                        w - size * 2 - 30,
+                        h - size * 2 - 30,
+                        size,
+                        size
+                );
     }
 
-    @Override
-    public void keyTyped(
-            KeyEvent e) {
+    // ========================================================
+    // DRAW TOUCH CONTROLS
+    // ========================================================
+
+    private void drawTouchControls(
+            Graphics2D g) {
+
+        if (getWidth() > 850 &&
+                getHeight() > 600) {
+
+            // Still show them,
+            // but make them subtle.
+        }
+
+        drawTouchButton(
+                g,
+                touchLeftButton,
+                "◀"
+        );
+
+        drawTouchButton(
+                g,
+                touchRightButton,
+                "▶"
+        );
+
+        drawTouchButton(
+                g,
+                touchUp,
+                "▲"
+        );
+
+        drawTouchButton(
+                g,
+                touchJump,
+                "JUMP"
+        );
+
+        drawTouchButton(
+                g,
+                touchBreak,
+                "⛏"
+        );
+
+        drawTouchButton(
+                g,
+                touchPlace,
+                "▣"
+        );
+
+        drawTouchButton(
+                g,
+                touchAttack,
+                "⚔"
+        );
     }
 
-    // ============================================================
-    // MOUSE
-    // ============================================================
+    private void drawTouchButton(
+            Graphics2D g,
+            Rectangle r,
+            String text) {
+
+        g.setColor(
+                new Color(
+                        0,
+                        0,
+                        0,
+                        120
+                )
+        );
+
+        g.fillRoundRect(
+                r.x,
+                r.y,
+                r.width,
+                r.height,
+                20,
+                20
+        );
+
+        g.setColor(
+                Color.WHITE
+        );
+
+        g.drawRoundRect(
+                r.x,
+                r.y,
+                r.width,
+                r.height,
+                20,
+                20
+        );
+
+        g.setFont(
+                new Font(
+                        "Arial",
+                        Font.BOLD,
+                        Math.max(
+                                14,
+                                r.height / 4
+                        )
+                )
+        );
+
+        FontMetrics fm =
+                g.getFontMetrics();
+
+        int tx =
+                r.x
+                +
+                (r.width
+                - fm.stringWidth(text))
+                / 2;
+
+        int ty =
+                r.y
+                +
+                (r.height
+                + fm.getAscent())
+                / 2
+                - 4;
+
+        g.drawString(
+                text,
+                tx,
+                ty
+        );
+    }
+
+    // ========================================================
+    // TOUCH INPUT
+    // ========================================================
 
     @Override
     public void mousePressed(
             MouseEvent e) {
 
-        mouseX =
-                e.getX();
+        mouseX = e.getX();
 
-        mouseY =
-                e.getY();
+        mouseY = e.getY();
+
+        Point p =
+                e.getPoint();
+
+        if (touchLeftButton.contains(p)) {
+
+            touchLeft = true;
+
+            return;
+        }
+
+        if (touchRightButton.contains(p)) {
+
+            touchRight = true;
+
+            return;
+        }
+
+        if (touchUp.contains(p)) {
+
+            touchForward = true;
+
+            return;
+        }
+
+        if (touchJump.contains(p)) {
+
+            jump();
+
+            return;
+        }
+
+        if (touchBreak.contains(p)) {
+
+            breakBlock();
+
+            return;
+        }
+
+        if (touchPlace.contains(p)) {
+
+            placeBlock();
+
+            return;
+        }
+
+        if (touchAttack.contains(p)) {
+
+            attack();
+
+            return;
+        }
+
+        // Laptop mouse
 
         if (SwingUtilities.isLeftMouseButton(e)) {
 
-            mouseLeft = true;
-
-            // Sword attack
-            if (hotbar[selectedSlot].type
-                    == ItemType.SWORD) {
-
-                attackEnemy();
-            }
-
-            // Bow/projectile
-            if (hotbar[selectedSlot].type
-                    == ItemType.BOW) {
-
-                shootProjectile();
-            }
+            breakBlock();
         }
 
         if (SwingUtilities.isRightMouseButton(e)) {
 
-            mouseRight = true;
+            placeBlock();
         }
-    }
-
-    private void attackEnemy() {
-
-        for (Enemy enemy : enemies) {
-
-            if (distance(
-                    player.x,
-                    player.y,
-                    enemy.x,
-                    enemy.y
-            ) < 100) {
-
-                enemy.health -=
-                        25;
-
-                createExplosion(
-                        enemy.x,
-                        enemy.y
-                );
-
-                break;
-            }
-        }
-
-        mouseLeft = false;
-    }
-
-    private void shootProjectile() {
-
-        double targetX =
-                mouseX + cameraX;
-
-        double targetY =
-                mouseY + cameraY;
-
-        double angle =
-                Math.atan2(
-                        targetY - player.y,
-                        targetX - player.x
-                );
-
-        projectiles.add(
-                new Projectile(
-                        player.x,
-                        player.y,
-                        Math.cos(angle) * 9,
-                        Math.sin(angle) * 9,
-                        25
-                )
-        );
-
-        mouseLeft = false;
     }
 
     @Override
     public void mouseReleased(
             MouseEvent e) {
 
-        if (SwingUtilities.isLeftMouseButton(e)) {
-            mouseLeft = false;
+        Point p =
+                e.getPoint();
+
+        if (touchLeftButton.contains(p)) {
+
+            touchLeft = false;
         }
 
-        if (SwingUtilities.isRightMouseButton(e)) {
-            mouseRight = false;
+        if (touchRightButton.contains(p)) {
+
+            touchRight = false;
         }
+
+        if (touchUp.contains(p)) {
+
+            touchForward = false;
+        }
+    }
+
+    // ========================================================
+    // MOUSE LOOK
+    // ========================================================
+
+    @Override
+    public void mouseDragged(
+            MouseEvent e) {
+
+        int dx =
+                e.getX()
+                - mouseX;
+
+        int dy =
+                e.getY()
+                - mouseY;
+
+        cameraYaw +=
+                dx * mouseSensitivity;
+
+        cameraPitch +=
+                dy * mouseSensitivity;
+
+        cameraPitch =
+                Math.max(
+                        -1.2,
+                        Math.min(
+                                1.2,
+                                cameraPitch
+                        )
+                );
+
+        mouseX =
+                e.getX();
+
+        mouseY =
+                e.getY();
     }
 
     @Override
@@ -2449,938 +2736,235 @@ public class MiniCraft extends JPanel
                 e.getY();
     }
 
-    @Override
-    public void mouseDragged(
-            MouseEvent e) {
-
-        mouseMoved(e);
-    }
+    // ========================================================
+    // KEYBOARD
+    // ========================================================
 
     @Override
-    public void mouseClicked(
-            MouseEvent e) {
+    public void keyPressed(
+            KeyEvent e) {
+
+        int key =
+                e.getKeyCode();
+
+        switch (key) {
+
+            case KeyEvent.VK_W:
+            case KeyEvent.VK_UP:
+                forward = true;
+                break;
+
+            case KeyEvent.VK_S:
+            case KeyEvent.VK_DOWN:
+                backward = true;
+                break;
+
+            case KeyEvent.VK_A:
+                left = true;
+                break;
+
+            case KeyEvent.VK_D:
+                right = true;
+                break;
+
+            case KeyEvent.VK_SHIFT:
+                sprint = true;
+                break;
+
+            case KeyEvent.VK_SPACE:
+                jump();
+                break;
+
+            case KeyEvent.VK_F:
+                breakBlock();
+                break;
+
+            case KeyEvent.VK_R:
+                placeBlock();
+                break;
+
+            case KeyEvent.VK_Q:
+                attack();
+                break;
+
+            case KeyEvent.VK_E:
+                nextBlock();
+                break;
+
+            case KeyEvent.VK_ESCAPE:
+                paused =
+                        !paused;
+                break;
+
+            case KeyEvent.VK_1:
+                selectSlot(0);
+                break;
+
+            case KeyEvent.VK_2:
+                selectSlot(1);
+                break;
+
+            case KeyEvent.VK_3:
+                selectSlot(2);
+                break;
+
+            case KeyEvent.VK_4:
+                selectSlot(3);
+                break;
+
+            case KeyEvent.VK_5:
+                selectSlot(4);
+                break;
+
+            case KeyEvent.VK_6:
+                selectSlot(5);
+                break;
+
+            case KeyEvent.VK_7:
+                selectSlot(6);
+                break;
+
+            case KeyEvent.VK_8:
+                selectSlot(7);
+                break;
+        }
     }
 
     @Override
-    public void mouseEntered(
-            MouseEvent e) {
+    public void keyReleased(
+            KeyEvent e) {
+
+        int key =
+                e.getKeyCode();
+
+        switch (key) {
+
+            case KeyEvent.VK_W:
+            case KeyEvent.VK_UP:
+                forward = false;
+                break;
+
+            case KeyEvent.VK_S:
+            case KeyEvent.VK_DOWN:
+                backward = false;
+                break;
+
+            case KeyEvent.VK_A:
+                left = false;
+                break;
+
+            case KeyEvent.VK_D:
+                right = false;
+                break;
+
+            case KeyEvent.VK_SHIFT:
+                sprint = false;
+                break;
+        }
     }
+
+    private void nextBlock() {
+
+        selectedSlot++;
+
+        if (selectedSlot >=
+                hotbar.length) {
+
+            selectedSlot = 0;
+        }
+
+        selectedBlock =
+                hotbar[selectedSlot];
+    }
+
+    private void selectSlot(
+            int slot) {
+
+        if (slot >= 0 &&
+                slot < hotbar.length) {
+
+            selectedSlot = slot;
+
+            selectedBlock =
+                    hotbar[slot];
+        }
+    }
+
+    // ========================================================
+    // HELPERS
+    // ========================================================
+
+    private boolean insideWorld(
+            int x,
+            int y,
+            int z) {
+
+        return
+                x >= 0 &&
+                x < WORLD_SIZE &&
+                y >= 0 &&
+                y < WORLD_HEIGHT &&
+                z >= 0 &&
+                z < WORLD_SIZE;
+    }
+
+    // ========================================================
+    // EMPTY EVENT METHODS
+    // ========================================================
 
     @Override
-    public void mouseExited(
-            MouseEvent e) {
-    }
+    public void keyTyped(KeyEvent e) {}
 
-    // ============================================================
-    // WORLD CLASS
-    // ============================================================
+    @Override
+    public void mouseClicked(MouseEvent e) {}
 
-    class World implements Serializable {
+    @Override
+    public void mouseEntered(MouseEvent e) {}
 
-        private HashMap<String, BlockData> blocks =
-                new HashMap<>();
+    @Override
+    public void mouseExited(MouseEvent e) {}
 
-        void generate() {
-
-            blocks.clear();
-
-            int baseGround = 40;
-
-            for (int x = 0;
-                 x < WORLD_WIDTH;
-                 x++) {
-
-                int ground =
-                        baseGround
-                                + (int)
-                                (Math.sin(x * 0.05)
-                                        * 5)
-                                + random.nextInt(3);
-
-                for (int y = ground;
-                     y < WORLD_HEIGHT;
-                     y++) {
-
-                    BlockType type;
-
-                    if (y == ground) {
-
-                        type = BlockType.GRASS;
-
-                    } else if (y < ground + 4) {
-
-                        type = BlockType.DIRT;
-
-                    } else {
-
-                        type =
-                                random.nextDouble()
-                                        < 0.02
-                                        ? randomOre()
-                                        : BlockType.STONE;
-                    }
-
-                    if (y >
-                            WORLD_HEIGHT - 2) {
-
-                        type =
-                                BlockType.BEDROCK;
-                    }
-
-                    // Cave generation
-                    if (y > ground + 5
-                            && random.nextDouble()
-                            < 0.045) {
-
-                        continue;
-                    }
-
-                    set(
-                            x,
-                            y,
-                            type
-                    );
-                }
-
-                // Trees
-                if (random.nextDouble()
-                        < 0.08) {
-
-                    generateTree(
-                            x,
-                            ground
-                    );
-                }
-            }
-
-            generateWater();
-
-            generateLava();
-        }
-
-        private BlockType randomOre() {
-
-            int r =
-                    random.nextInt(100);
-
-            if (r < 55) {
-                return BlockType.COAL_ORE;
-            }
-
-            if (r < 85) {
-                return BlockType.IRON_ORE;
-            }
-
-            if (r < 97) {
-                return BlockType.GOLD_ORE;
-            }
-
-            return BlockType.DIAMOND_ORE;
-        }
-
-        private void generateTree(
-                int x,
-                int ground) {
-
-            int height =
-                    4 + random.nextInt(3);
-
-            for (int y = 1;
-                 y <= height;
-                 y++) {
-
-                if (inBounds(
-                        x,
-                        ground - y
-                )) {
-
-                    set(
-                            x,
-                            ground - y,
-                            BlockType.WOOD
-                    );
-                }
-            }
-
-            int top =
-                    ground - height;
-
-            for (int dx = -2;
-                 dx <= 2;
-                 dx++) {
-
-                for (int dy = -2;
-                     dy <= 1;
-                     dy++) {
-
-                    if (Math.abs(dx)
-                            + Math.abs(dy)
-                            < 4) {
-
-                        int lx =
-                                x + dx;
-
-                        int ly =
-                                top + dy;
-
-                        if (inBounds(
-                                lx,
-                                ly
-                        )
-                                && get(lx, ly)
-                                == null) {
-
-                            set(
-                                    lx,
-                                    ly,
-                                    BlockType.LEAVES
-                            );
-                        }
-                    }
-                }
-            }
-        }
-
-        private void generateWater() {
-
-            for (int x = 0;
-                 x < WORLD_WIDTH;
-                 x++) {
-
-                if (random.nextDouble()
-                        < 0.03) {
-
-                    int ground =
-                            findGround(x);
-
-                    if (ground > 0) {
-
-                        set(
-                                x,
-                                ground,
-                                BlockType.WATER
-                        );
-                    }
-                }
-            }
-        }
-
-        private void generateLava() {
-
-            for (int i = 0;
-                 i < 50;
-                 i++) {
-
-                int x =
-                        random.nextInt(
-                                WORLD_WIDTH
-                        );
-
-                int y =
-                        60
-                                + random.nextInt(
-                                WORLD_HEIGHT - 62
-                        );
-
-                if (get(x, y) == null) {
-
-                    set(
-                            x,
-                            y,
-                            BlockType.LAVA
-                    );
-                }
-            }
-        }
-
-        boolean inBounds(
-                int x,
-                int y) {
-
-            return x >= 0
-                    && x < WORLD_WIDTH
-                    && y >= 0
-                    && y < WORLD_HEIGHT;
-        }
-
-        BlockType get(
-                int x,
-                int y) {
-
-            if (!inBounds(x, y)) {
-                return BlockType.BEDROCK;
-            }
-
-            BlockData data =
-                    blocks.get(
-                            x + "," + y
-                    );
-
-            return data == null
-                    ? null
-                    : data.type;
-        }
-
-        void set(
-                int x,
-                int y,
-                BlockType type) {
-
-            if (!inBounds(x, y)) {
-                return;
-            }
-
-            blocks.put(
-                    x + "," + y,
-                    new BlockData(type)
-            );
-        }
-
-        boolean isSolid(
-                int x,
-                int y) {
-
-            BlockType type =
-                    get(x, y);
-
-            if (type == null) {
-                return false;
-            }
-
-            return type != BlockType.WATER
-                    && type != BlockType.LAVA
-                    && type != BlockType.LEAVES
-                    && type != BlockType.TORCH;
-        }
-
-        boolean damageBlock(
-                int x,
-                int y,
-                int damage) {
-
-            BlockData data =
-                    blocks.get(
-                            x + "," + y
-                    );
-
-            if (data == null) {
-                return false;
-            }
-
-            data.health -= damage;
-
-            if (data.health <= 0) {
-
-                blocks.remove(
-                        x + "," + y
-                );
-
-                return true;
-            }
-
-            return false;
-        }
-
-        int findGround(
-                int x) {
-
-            if (x < 0
-                    || x >= WORLD_WIDTH) {
-
-                return -1;
-            }
-
-            for (int y = 0;
-                 y < WORLD_HEIGHT;
-                 y++) {
-
-                BlockType block =
-                        get(x, y);
-
-                if (block != null
-                        && isSolid(x, y)) {
-
-                    return y;
-                }
-            }
-
-            return -1;
-        }
-    }
-
-    // ============================================================
-    // PLAYER CLASS
-    // ============================================================
-
-    class Player {
-
-        double x;
-        double y;
-
-        double vx;
-        double vy;
-
-        int width = 24;
-        int height = 42;
-
-        int health = 100;
-        int maxHealth = 100;
-
-        boolean grounded;
-
-        void spawn() {
-
-            int xBlock =
-                    WORLD_WIDTH / 2;
-
-            int ground =
-                    world.findGround(
-                            xBlock
-                    );
-
-            x =
-                    xBlock * BLOCK_SIZE;
-
-            y =
-                    ground * BLOCK_SIZE
-                            - height;
-        }
-
-        void respawn() {
-
-            spawn();
-
-            health =
-                    maxHealth;
-
-            vx = 0;
-            vy = 0;
-        }
-
-        void damage(
-                int amount) {
-
-            health -= amount;
-
-            createExplosion(
-                    x,
-                    y
-            );
-        }
-
-        Rectangle getBounds() {
-
-            return new Rectangle(
-                    (int) x,
-                    (int) y,
-                    width,
-                    height
-            );
-        }
-    }
-
-    // ============================================================
-    // ENEMY CLASS
-    // ============================================================
-
-    class Enemy {
-
-        double x;
-        double y;
-
-        double vx;
-        double vy;
-
-        int width = 30;
-        int height = 35;
-
-        int health;
-        int maxHealth;
-
-        int damage;
-
-        int attackCooldown = 0;
-
-        EnemyType type;
-
-        Enemy(
-                double x,
-                double y,
-                EnemyType type) {
-
-            this.x = x;
-            this.y = y;
-            this.type = type;
-
-            switch (type) {
-
-                case ZOMBIE:
-
-                    health = 80;
-                    damage = 10;
-                    break;
-
-                case SKELETON:
-
-                    health = 50;
-                    damage = 15;
-                    break;
-
-                case SPIDER:
-
-                    health = 40;
-                    damage = 12;
-                    break;
-
-                case SLIME:
-
-                    health = 30;
-                    damage = 8;
-                    break;
-            }
-
-            maxHealth = health;
-        }
-
-        void update() {
-
-            double direction =
-                    player.x > x
-                            ? 1
-                            : -1;
-
-            double speed =
-                    type == EnemyType.SPIDER
-                            ? 2.4
-                            : 1.3;
-
-            vx =
-                    direction * speed;
-
-            x += vx;
-
-            vy += GRAVITY;
-
-            y += vy;
-
-            Rectangle rect =
-                    getBounds();
-
-            int bottom =
-                    (rect.y
-                            + rect.height)
-                            / BLOCK_SIZE;
-
-            int left =
-                    rect.x
-                            / BLOCK_SIZE;
-
-            int right =
-                    (rect.x
-                            + rect.width)
-                            / BLOCK_SIZE;
-
-            if (world.isSolid(
-                    left,
-                    bottom
-            )
-                    || world.isSolid(
-                    right,
-                    bottom
-            )) {
-
-                y =
-                        bottom * BLOCK_SIZE
-                                - height;
-
-                vy = 0;
-            }
-
-            // Jump over blocks
-            if (random.nextDouble()
-                    < 0.01) {
-
-                vy = -8;
-            }
-        }
-
-        Rectangle getBounds() {
-
-            return new Rectangle(
-                    (int) x,
-                    (int) y,
-                    width,
-                    height
-            );
-        }
-    }
-
-    // ============================================================
-    // PROJECTILE CLASS
-    // ============================================================
-
-    class Projectile {
-
-        double x;
-        double y;
-
-        double vx;
-        double vy;
-
-        int damage;
-        int life = 100;
-
-        Projectile(
-                double x,
-                double y,
-                double vx,
-                double vy,
-                int damage) {
-
-            this.x = x;
-            this.y = y;
-
-            this.vx = vx;
-            this.vy = vy;
-
-            this.damage = damage;
-        }
-
-        void update() {
-
-            x += vx;
-            y += vy;
-
-            life--;
-
-            int bx =
-                    (int) x / BLOCK_SIZE;
-
-            int by =
-                    (int) y / BLOCK_SIZE;
-
-            if (world.isSolid(
-                    bx,
-                    by
-            )) {
-
-                life = 0;
-            }
-        }
-
-        Rectangle getBounds() {
-
-            return new Rectangle(
-                    (int) x,
-                    (int) y,
-                    8,
-                    8
-            );
-        }
-    }
-
-    // ============================================================
-    // ITEM DROP
-    // ============================================================
-
-    class ItemDrop {
-
-        double x;
-        double y;
-
-        double vy = -3;
-
-        ItemType type;
-        int amount;
-
-        ItemDrop(
-                double x,
-                double y,
-                ItemType type,
-                int amount) {
-
-            this.x = x;
-            this.y = y;
-
-            this.type = type;
-            this.amount = amount;
-        }
-
-        void update() {
-
-            vy += 0.2;
-
-            y += vy;
-
-            int bx =
-                    (int) x / BLOCK_SIZE;
-
-            int by =
-                    (int) (y + 15)
-                            / BLOCK_SIZE;
-
-            if (world.isSolid(
-                    bx,
-                    by
-            )) {
-
-                y =
-                        by * BLOCK_SIZE
-                                - 15;
-
-                vy = 0;
-            }
-
-            // Magnet
-            double dx =
-                    player.x - x;
-
-            double dy =
-                    player.y - y;
-
-            double distance =
-                    Math.sqrt(
-                            dx * dx
-                                    + dy * dy
-                    );
-
-            if (distance < 100) {
-
-                x += dx * 0.08;
-                y += dy * 0.08;
-            }
-        }
-
-        Rectangle getBounds() {
-
-            return new Rectangle(
-                    (int) x,
-                    (int) y,
-                    15,
-                    15
-            );
-        }
-    }
-
-    // ============================================================
-    // PARTICLE
-    // ============================================================
-
-    class Particle {
-
-        double x;
-        double y;
-
-        double vx;
-        double vy;
-
-        int life;
-
-        Particle(
-                double x,
-                double y,
-                double vx,
-                double vy,
-                int life) {
-
-            this.x = x;
-            this.y = y;
-
-            this.vx = vx;
-            this.vy = vy;
-
-            this.life = life;
-        }
-
-        void update() {
-
-            x += vx;
-            y += vy;
-
-            vy += 0.1;
-
-            life--;
-        }
-    }
-
-    // ============================================================
-    // BLOCK DATA
-    // ============================================================
-
-    static class BlockData
-            implements Serializable {
-
-        BlockType type;
-
-        int health = 3;
-
-        BlockData(
-                BlockType type) {
-
-            this.type = type;
-
-            switch (type) {
-
-                case STONE:
-                    health = 5;
-                    break;
-
-                case WOOD:
-                    health = 4;
-                    break;
-
-                case DIAMOND_ORE:
-                    health = 8;
-                    break;
-
-                case BEDROCK:
-                    health = Integer.MAX_VALUE;
-                    break;
-
-                default:
-                    health = 2;
-            }
-        }
-    }
-
-    // ============================================================
-    // ITEM STACK
-    // ============================================================
-
-    static class ItemStack {
-
-        ItemType type;
-        int amount;
-
-        ItemStack(
-                ItemType type,
-                int amount) {
-
-            this.type = type;
-            this.amount = amount;
-        }
-    }
-
-    // ============================================================
-    // ENUMS
-    // ============================================================
-
-    enum BlockType {
-
-        GRASS,
-        DIRT,
-        STONE,
-        WOOD,
-        LEAVES,
-        SAND,
-        WATER,
-
-        COAL_ORE,
-        IRON_ORE,
-        GOLD_ORE,
-        DIAMOND_ORE,
-
-        BEDROCK,
-
-        TORCH,
-        LAVA
-    }
-
-    enum ItemType {
-
-        GRASS,
-        DIRT,
-        STONE,
-        WOOD,
-        SAND,
-
-        TORCH,
-
-        PICKAXE,
-        AXE,
-        SWORD,
-        BOW,
-
-        APPLE,
-
-        COAL,
-        IRON,
-        GOLD,
-        DIAMOND,
-
-        ROTTEN_FLESH
-    }
-
-    enum EnemyType {
-
-        ZOMBIE(
-                new Color(
-                        70,
-                        170,
-                        70
-                )
-        ),
-
-        SKELETON(
-                Color.LIGHT_GRAY
-        ),
-
-        SPIDER(
-                Color.BLACK
-        ),
-
-        SLIME(
-                new Color(
-                        80,
-                        220,
-                        100
-                )
-        );
-
-        Color color;
-
-        EnemyType(Color color) {
-
-            this.color = color;
-        }
-    }
-
-    // ============================================================
+    // ========================================================
     // MAIN
-    // ============================================================
+    // ========================================================
 
     public static void main(
             String[] args) {
 
-        SwingUtilities.invokeLater(
-                () -> {
+        SwingUtilities.invokeLater(() -> {
 
-                    JFrame frame =
-                            new JFrame(
-                                    "MiniCraft 2D"
-                            );
-
-                    MiniCraft game =
-                            new MiniCraft();
-
-                    frame.setDefaultCloseOperation(
-                            JFrame.EXIT_ON_CLOSE
+            JFrame frame =
+                    new JFrame(
+                            "MiniCraft 3D"
                     );
 
-                    frame.add(game);
+            MiniCraft3D game =
+                    new MiniCraft3D();
 
-                    frame.pack();
+            frame.setContentPane(game);
 
-                    frame.setResizable(false);
+            frame.setDefaultCloseOperation(
+                    JFrame.EXIT_ON_CLOSE
+            );
 
-                    frame.setLocationRelativeTo(
-                            null
-                    );
+            frame.setMinimumSize(
+                    new Dimension(
+                            700,
+                            500
+                    )
+            );
 
-                    frame.setVisible(true);
+            frame.pack();
 
-                    game.requestFocusInWindow();
-                }
-        );
+            frame.setLocationRelativeTo(
+                    null
+            );
+
+            frame.setResizable(true);
+
+            frame.setVisible(true);
+
+            game.requestFocusInWindow();
+        });
     }
 }
