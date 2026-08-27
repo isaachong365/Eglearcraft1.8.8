@@ -14,7 +14,7 @@ import java.util.*;
  *
  * LAPTOP:
  *   W / A / S / D  = Move
- *   Arrow Keys     = Look
+ *   key pad     = Look
  *   Space          = Jump
  *   Shift          = Sprint
  *   E              = Change block
@@ -24,7 +24,7 @@ import java.util.*;
  *
  * MOUSE:
  *   Left click     = Break / attack
- *   Right click    = Place
+ *   Right click    = Place /attack
  *
  * TOUCH:
  *   On-screen buttons for movement, jump, break, place
@@ -32,7 +32,7 @@ import java.util.*;
  * ============================================================
  */
 
-public class MiniCraft3D extends JPanel
+public class fake MineCraft extends JPanel
         implements ActionListener,
                    KeyListener,
                    MouseListener,
@@ -49,10 +49,10 @@ public class MiniCraft3D extends JPanel
     // WORLD
     // ========================================================
 
-    private static final int WORLD_SIZE = 64;
-    private static final int WORLD_HEIGHT = 18;
+    private static final int WORLD_SIZE = 6400;
+    private static final int WORLD_HEIGHT = 12740;
 
-    private static final int SEA_LEVEL = 5;
+    private static final int SEA_LEVEL = 15;
 
     private BlockType[][][] world =
             new BlockType[WORLD_SIZE][WORLD_HEIGHT][WORLD_SIZE];
